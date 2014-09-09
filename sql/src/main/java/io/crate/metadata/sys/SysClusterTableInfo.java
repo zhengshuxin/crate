@@ -123,6 +123,19 @@ public class SysClusterTableInfo extends SysTableInfo {
         register("settings", DataTypes.OBJECT, ImmutableList.of(CrateSettings.CLUSTER.name(),
                 CrateSettings.ROUTING.name(),
                 CrateSettings.ROUTING_ALLOCATION.name(),
+                CrateSettings.ROUTING_ALLOCATION_INCLUDE.name()));
+        register("settings", DataTypes.OBJECT, ImmutableList.of(CrateSettings.CLUSTER.name(),
+                CrateSettings.ROUTING.name(),
+                CrateSettings.ROUTING_ALLOCATION.name(),
+                CrateSettings.ROUTING_ALLOCATION_EXCLUDE.name()));
+        register("settings", DataTypes.OBJECT, ImmutableList.of(CrateSettings.CLUSTER.name(),
+                CrateSettings.ROUTING.name(),
+                CrateSettings.ROUTING_ALLOCATION.name(),
+                CrateSettings.ROUTING_ALLOCATION_REQUIRE.name()));
+
+        register("settings", DataTypes.OBJECT, ImmutableList.of(CrateSettings.CLUSTER.name(),
+                CrateSettings.ROUTING.name(),
+                CrateSettings.ROUTING_ALLOCATION.name(),
                 CrateSettings.ROUTING_ALLOCATION_AWARENESS.name()));
         register("settings", DataTypes.STRING, ImmutableList.of(CrateSettings.CLUSTER.name(),
                 CrateSettings.ROUTING.name(),
@@ -248,12 +261,21 @@ public class SysClusterTableInfo extends SysTableInfo {
         super(clusterService);
     }
 
-    private static ReferenceInfo register(String column, DataType type, List<String> path) {
+    public static ReferenceInfo register(String column, DataType type, List<String> path) {
         ReferenceInfo info = new ReferenceInfo(new ReferenceIdent(IDENT, column, path), RowGranularity.CLUSTER, type);
         if (info.ident().isColumn()) {
             columns.add(info);
         }
         INFOS.put(info.ident().columnIdent(), info);
+        return info;
+    }
+
+    public static ReferenceInfo unregister(String column, DataType type, List<String> path) {
+        ReferenceInfo info = new ReferenceInfo(new ReferenceIdent(IDENT, column, path), RowGranularity.CLUSTER, type);
+        if (info.ident().isColumn()) {
+            columns.remove(info);
+        }
+        INFOS.remove(info.ident().columnIdent());
         return info;
     }
 

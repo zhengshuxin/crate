@@ -96,6 +96,7 @@ public class ClusterSettingsExpression extends SysClusterObjectReference {
         @Override
         public void onRefreshSettings(Settings settings) {
             applySettings(CrateSettings.CRATE_SETTINGS, settings);
+            int k = 0;
         }
 
         private void applySettings(List<Setting> clusterSettings, Settings settings) {
@@ -106,7 +107,9 @@ public class ClusterSettingsExpression extends SysClusterObjectReference {
                     applySettings((List<Setting>) setting.children(), settings);
                 }
                 if (!newValue.equals(values.get(name))) {
-                    logger.info("updating [{}] from [{}] to [{}]", name, values.get(name), newValue);
+                    if (settings.get(name) != null) {
+                        logger.info("updating [{}] from [{}] to [{}]", name, values.get(name), newValue);
+                    }
                     values.put(name, newValue);
                 }
             }

@@ -22,12 +22,20 @@
 package io.crate.metadata.settings;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Sets;
+import io.crate.analyze.SettingsApplier;
+import io.crate.analyze.SettingsAppliers;
+import io.crate.metadata.sys.SysClusterTableInfo;
+import io.crate.types.DataTypes;
 import org.elasticsearch.common.unit.ByteSizeUnit;
 import org.elasticsearch.common.unit.ByteSizeValue;
 import org.elasticsearch.common.unit.TimeValue;
 
+import javax.annotation.Nullable;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 public class CrateSettings {
@@ -333,7 +341,10 @@ public class CrateSettings {
                     ROUTING_ALLOCATION_CLUSTER_CONCURRENT_REBALANCE,
                     ROUTING_ALLOCATION_NODE_INITIAL_PRIMARIES_RECOVERIES,
                     ROUTING_ALLOCATION_NODE_CONCURRENT_RECOVERIES,
-                    ROUTING_ALLOCATION_AWARENESS,
+                    ROUTING_ALLOCATION_INCLUDE,
+                    ROUTING_ALLOCATION_EXCLUDE,
+                    ROUTING_ALLOCATION_REQUIRE,
+                    //ROUTING_ALLOCATION_AWARENESS,
                     ROUTING_ALLOCATION_BALANCE,
                     ROUTING_ALLOCATION_DISK
             );
@@ -409,6 +420,36 @@ public class CrateSettings {
         }
     };
 
+    public static final NestedStringGroupSetting ROUTING_ALLOCATION_INCLUDE = new NestedStringGroupSetting() {
+        @Override
+        public String name() { return "include"; }
+
+        @Override
+        public Setting parent() {
+            return ROUTING_ALLOCATION;
+        }
+    };
+
+    public static final NestedStringGroupSetting ROUTING_ALLOCATION_EXCLUDE = new NestedStringGroupSetting() {
+        @Override
+        public String name() { return "exclude"; }
+
+        @Override
+        public Setting parent() {
+            return ROUTING_ALLOCATION;
+        }
+    };
+
+    public static final NestedStringGroupSetting ROUTING_ALLOCATION_REQUIRE = new NestedStringGroupSetting() {
+        @Override
+        public String name() { return "require"; }
+
+        @Override
+        public Setting parent() {
+            return ROUTING_ALLOCATION;
+        }
+    };
+
     public static final NestedSetting ROUTING_ALLOCATION_AWARENESS = new NestedSetting() {
         @Override
         public String name() { return "awareness"; }
@@ -422,6 +463,7 @@ public class CrateSettings {
         public List<Setting> children() {
             return ImmutableList.<Setting>of(
                     ROUTING_ALLOCATION_AWARENESS_ATTRIBUTES
+                    //ROUTING_ALLOCATION_AWARENESS_FORCE
             );
         }
     };
@@ -438,6 +480,19 @@ public class CrateSettings {
             return ROUTING_ALLOCATION_AWARENESS;
         }
     };
+
+
+    /*
+    public static final NestedStringGroupSetting ROUTING_ALLOCATION_AWARENESS_FORCE = new NestedStringGroupSetting() {
+        @Override
+        public String name() { return "force"; }
+
+        @Override
+        public Setting parent() {
+            return ROUTING_ALLOCATION_AWARENESS;
+        }
+    };
+    */
 
     public static final NestedSetting ROUTING_ALLOCATION_BALANCE = new NestedSetting() {
         @Override
@@ -868,5 +923,181 @@ public class CrateSettings {
     };
 
     public static final ImmutableList<Setting> CRATE_SETTINGS = ImmutableList.<Setting>of(STATS, CLUSTER, DISCOVERY, INDICES);
+
+    public static final Map<String, SettingsApplier> SUPPORTED_SETTINGS = ImmutableMap.<String, SettingsApplier>builder()
+            .put(CrateSettings.STATS.settingName(),
+                    new SettingsAppliers.ObjectSettingsApplier(CrateSettings.STATS))
+            .put(CrateSettings.STATS_JOBS_LOG_SIZE.settingName(),
+                    new SettingsAppliers.IntSettingsApplier(CrateSettings.STATS_JOBS_LOG_SIZE))
+            .put(CrateSettings.STATS_OPERATIONS_LOG_SIZE.settingName(),
+                    new SettingsAppliers.IntSettingsApplier(CrateSettings.STATS_OPERATIONS_LOG_SIZE))
+            .put(CrateSettings.STATS_ENABLED.settingName(),
+                    new SettingsAppliers.BooleanSettingsApplier(CrateSettings.STATS_ENABLED))
+            .put(CrateSettings.CLUSTER.settingName(),
+                    new SettingsAppliers.ObjectSettingsApplier(CrateSettings.CLUSTER))
+            .put(CrateSettings.GRACEFUL_STOP.settingName(),
+                    new SettingsAppliers.ObjectSettingsApplier(CrateSettings.GRACEFUL_STOP))
+            .put(CrateSettings.GRACEFUL_STOP_MIN_AVAILABILITY.settingName(),
+                    new SettingsAppliers.StringSettingsApplier(CrateSettings.GRACEFUL_STOP_MIN_AVAILABILITY))
+            .put(CrateSettings.GRACEFUL_STOP_REALLOCATE.settingName(),
+                    new SettingsAppliers.BooleanSettingsApplier(CrateSettings.GRACEFUL_STOP_REALLOCATE))
+            .put(CrateSettings.GRACEFUL_STOP_FORCE.settingName(),
+                    new SettingsAppliers.BooleanSettingsApplier(CrateSettings.GRACEFUL_STOP_FORCE))
+            .put(CrateSettings.GRACEFUL_STOP_TIMEOUT.settingName(),
+                    new SettingsAppliers.TimeSettingsApplier(CrateSettings.GRACEFUL_STOP_TIMEOUT))
+            .put(CrateSettings.GRACEFUL_STOP_IS_DEFAULT.settingName(),
+                    new SettingsAppliers.BooleanSettingsApplier(CrateSettings.GRACEFUL_STOP_IS_DEFAULT))
+            .put(CrateSettings.DISCOVERY.settingName(),
+                    new SettingsAppliers.ObjectSettingsApplier(CrateSettings.DISCOVERY))
+            .put(CrateSettings.DISCOVERY_ZEN.settingName(),
+                    new SettingsAppliers.ObjectSettingsApplier(CrateSettings.DISCOVERY_ZEN))
+            .put(CrateSettings.DISCOVERY_ZEN_MIN_MASTER_NODES.settingName(),
+                    new SettingsAppliers.IntSettingsApplier(CrateSettings.DISCOVERY_ZEN_MIN_MASTER_NODES))
+            .put(CrateSettings.DISCOVERY_ZEN_PING_TIMEOUT.settingName(),
+                    new SettingsAppliers.TimeSettingsApplier(CrateSettings.DISCOVERY_ZEN_PING_TIMEOUT))
+            .put(CrateSettings.DISCOVERY_ZEN_PUBLISH_TIMEOUT.settingName(),
+                    new SettingsAppliers.TimeSettingsApplier(CrateSettings.DISCOVERY_ZEN_PUBLISH_TIMEOUT))
+            .put(CrateSettings.ROUTING.settingName(),
+                    new SettingsAppliers.ObjectSettingsApplier(CrateSettings.ROUTING))
+            .put(CrateSettings.ROUTING_ALLOCATION.settingName(),
+                    new SettingsAppliers.ObjectSettingsApplier(CrateSettings.ROUTING_ALLOCATION))
+            .put(CrateSettings.ROUTING_ALLOCATION_ENABLE.settingName(),
+                    new SettingsAppliers.StringSettingsApplier(CrateSettings.ROUTING_ALLOCATION_ENABLE))
+            .put(CrateSettings.ROUTING_ALLOCATION_ALLOW_REBALANCE.settingName(),
+                    new SettingsAppliers.StringSettingsApplier(CrateSettings.ROUTING_ALLOCATION_ALLOW_REBALANCE))
+            .put(CrateSettings.ROUTING_ALLOCATION_CLUSTER_CONCURRENT_REBALANCE.settingName(),
+                    new SettingsAppliers.IntSettingsApplier(CrateSettings.ROUTING_ALLOCATION_CLUSTER_CONCURRENT_REBALANCE))
+            .put(CrateSettings.ROUTING_ALLOCATION_NODE_INITIAL_PRIMARIES_RECOVERIES.settingName(),
+                    new SettingsAppliers.IntSettingsApplier(CrateSettings.ROUTING_ALLOCATION_NODE_INITIAL_PRIMARIES_RECOVERIES))
+            .put(CrateSettings.ROUTING_ALLOCATION_NODE_CONCURRENT_RECOVERIES.settingName(),
+                    new SettingsAppliers.IntSettingsApplier(CrateSettings.ROUTING_ALLOCATION_NODE_CONCURRENT_RECOVERIES))
+            .put(CrateSettings.ROUTING_ALLOCATION_INCLUDE.settingName(),
+                    new SettingsAppliers.DynamicObjectSettingsApplier(CrateSettings.ROUTING_ALLOCATION_INCLUDE))
+            .put(CrateSettings.ROUTING_ALLOCATION_AWARENESS.settingName(),
+                    new SettingsAppliers.ObjectSettingsApplier(CrateSettings.ROUTING_ALLOCATION_AWARENESS))
+            .put(CrateSettings.ROUTING_ALLOCATION_AWARENESS_ATTRIBUTES.settingName(),
+                    new SettingsAppliers.StringSettingsApplier(CrateSettings.ROUTING_ALLOCATION_AWARENESS_ATTRIBUTES))
+            //.put(CrateSettings.ROUTING_ALLOCATION_AWARENESS_FORCE.settingName(),
+            //        new SettingsAppliers.StringWithDynamicParentSettingsApplier(CrateSettings.ROUTING_ALLOCATION_AWARENESS_FORCE, "values"))
+            .put(CrateSettings.ROUTING_ALLOCATION_BALANCE.settingName(),
+                    new SettingsAppliers.ObjectSettingsApplier(CrateSettings.ROUTING_ALLOCATION_BALANCE))
+            .put(CrateSettings.ROUTING_ALLOCATION_BALANCE_SHARD.settingName(),
+                    new SettingsAppliers.FloatSettingsApplier(CrateSettings.ROUTING_ALLOCATION_BALANCE_SHARD))
+            .put(CrateSettings.ROUTING_ALLOCATION_BALANCE_INDEX.settingName(),
+                    new SettingsAppliers.FloatSettingsApplier(CrateSettings.ROUTING_ALLOCATION_BALANCE_INDEX))
+            .put(CrateSettings.ROUTING_ALLOCATION_BALANCE_PRIMARY.settingName(),
+                    new SettingsAppliers.FloatSettingsApplier(CrateSettings.ROUTING_ALLOCATION_BALANCE_PRIMARY))
+            .put(CrateSettings.ROUTING_ALLOCATION_BALANCE_THRESHOLD.settingName(),
+                    new SettingsAppliers.FloatSettingsApplier(CrateSettings.ROUTING_ALLOCATION_BALANCE_THRESHOLD))
+            .put(CrateSettings.ROUTING_ALLOCATION_DISK.settingName(),
+                    new SettingsAppliers.ObjectSettingsApplier(CrateSettings.ROUTING_ALLOCATION_DISK))
+            .put(CrateSettings.ROUTING_ALLOCATION_DISK_THRESHOLD_ENABLED.settingName(),
+                    new SettingsAppliers.BooleanSettingsApplier(CrateSettings.ROUTING_ALLOCATION_DISK_THRESHOLD_ENABLED))
+            .put(CrateSettings.ROUTING_ALLOCATION_DISK_WATERMARK.settingName(),
+                    new SettingsAppliers.ObjectSettingsApplier(CrateSettings.ROUTING_ALLOCATION_DISK_WATERMARK))
+            .put(CrateSettings.ROUTING_ALLOCATION_DISK_WATERMARK_LOW.settingName(),
+                    new SettingsAppliers.StringSettingsApplier(CrateSettings.ROUTING_ALLOCATION_DISK_WATERMARK_LOW))
+            .put(CrateSettings.ROUTING_ALLOCATION_DISK_WATERMARK_HIGH.settingName(),
+                    new SettingsAppliers.StringSettingsApplier(CrateSettings.ROUTING_ALLOCATION_DISK_WATERMARK_HIGH))
+            .put(CrateSettings.INDICES.settingName(),
+                    new SettingsAppliers.ObjectSettingsApplier(CrateSettings.INDICES))
+            .put(CrateSettings.INDICES_RECOVERY.settingName(),
+                    new SettingsAppliers.ObjectSettingsApplier(CrateSettings.INDICES_RECOVERY))
+            .put(CrateSettings.INDICES_RECOVERY_CONCURRENT_STREAMS.settingName(),
+                    new SettingsAppliers.IntSettingsApplier(CrateSettings.INDICES_RECOVERY_CONCURRENT_STREAMS))
+            .put(CrateSettings.INDICES_RECOVERY_FILE_CHUNK_SIZE.settingName(),
+                    new SettingsAppliers.ByteSizeSettingsApplier(CrateSettings.INDICES_RECOVERY_FILE_CHUNK_SIZE))
+            .put(CrateSettings.INDICES_RECOVERY_TRANSLOG_OPS.settingName(),
+                    new SettingsAppliers.IntSettingsApplier(CrateSettings.INDICES_RECOVERY_TRANSLOG_OPS))
+            .put(CrateSettings.INDICES_RECOVERY_TRANSLOG_SIZE.settingName(),
+                    new SettingsAppliers.ByteSizeSettingsApplier(CrateSettings.INDICES_RECOVERY_TRANSLOG_SIZE))
+            .put(CrateSettings.INDICES_RECOVERY_COMPRESS.settingName(),
+                    new SettingsAppliers.BooleanSettingsApplier(CrateSettings.INDICES_RECOVERY_COMPRESS))
+            .put(CrateSettings.INDICES_RECOVERY_MAX_BYTES_PER_SEC.settingName(),
+                    new SettingsAppliers.ByteSizeSettingsApplier(CrateSettings.INDICES_RECOVERY_MAX_BYTES_PER_SEC))
+            .put(CrateSettings.INDICES_STORE.settingName(),
+                    new SettingsAppliers.ObjectSettingsApplier(CrateSettings.INDICES_STORE))
+            .put(CrateSettings.INDICES_STORE_THROTTLE.settingName(),
+                    new SettingsAppliers.ObjectSettingsApplier(CrateSettings.INDICES_STORE_THROTTLE))
+            .put(CrateSettings.INDICES_STORE_THROTTLE_TYPE.settingName(),
+                    new SettingsAppliers.StringSettingsApplier(CrateSettings.INDICES_STORE_THROTTLE_TYPE))
+            .put(CrateSettings.INDICES_STORE_THROTTLE_MAX_BYTES_PER_SEC.settingName(),
+                    new SettingsAppliers.ByteSizeSettingsApplier(CrateSettings.INDICES_STORE_THROTTLE_MAX_BYTES_PER_SEC))
+            .put(CrateSettings.INDICES_FIELDDATA.settingName(),
+                    new SettingsAppliers.ObjectSettingsApplier(CrateSettings.INDICES_FIELDDATA))
+            .put(CrateSettings.INDICES_FIELDDATA_BREAKER.settingName(),
+                    new SettingsAppliers.ObjectSettingsApplier(CrateSettings.INDICES_FIELDDATA_BREAKER))
+            .put(CrateSettings.INDICES_FIELDDATA_BREAKER_LIMIT.settingName(),
+                    new SettingsAppliers.StringSettingsApplier(CrateSettings.INDICES_FIELDDATA_BREAKER_LIMIT))
+            .put(CrateSettings.INDICES_FIELDDATA_BREAKER_OVERHEAD.settingName(),
+                    new SettingsAppliers.DoubleSettingsApplier(CrateSettings.INDICES_FIELDDATA_BREAKER_OVERHEAD))
+            .put(CrateSettings.CLUSTER_INFO.settingName(),
+                    new SettingsAppliers.ObjectSettingsApplier(CrateSettings.CLUSTER_INFO))
+            .put(CrateSettings.CLUSTER_INFO_UPDATE.settingName(),
+                    new SettingsAppliers.ObjectSettingsApplier(CrateSettings.CLUSTER_INFO_UPDATE))
+            .put(CrateSettings.CLUSTER_INFO_UPDATE_INTERVAL.settingName(),
+                    new SettingsAppliers.TimeSettingsApplier(CrateSettings.CLUSTER_INFO_UPDATE_INTERVAL))
+            .build();
+
+    @Nullable
+    public static SettingsApplier getSetting(String name) {
+        SettingsApplier settingsApplier = SUPPORTED_SETTINGS.get(name);
+        if (settingsApplier == null) {
+            return findValidParentSetting(name);
+        }
+        return settingsApplier;
+    }
+
+    public static Set<String> settingNamesByPrefix(String prefix, boolean remove) {
+        Set<String> settingNames = Sets.newHashSet();
+        SettingsApplier settingsApplier = SUPPORTED_SETTINGS.get(prefix);
+        if (settingsApplier != null) {
+            if (!(settingsApplier instanceof SettingsAppliers.ObjectSettingsApplier)) {
+                settingNames.add(prefix);
+            }
+            if (settingsApplier instanceof SettingsAppliers.DynamicObjectSettingsApplier) {
+                SettingsAppliers.DynamicObjectSettingsApplier objectSettingsApplier = (SettingsAppliers.DynamicObjectSettingsApplier) settingsApplier;
+                for (Setting setting : objectSettingsApplier.setting().children()) {
+                    settingNames.add(setting.settingName());
+                    if (remove) {
+                        SysClusterTableInfo.unregister("settings", DataTypes.STRING, setting.chain());
+                    }
+                }
+            }
+        }
+        prefix += ".";
+        for (String name : SUPPORTED_SETTINGS.keySet()) {
+            if (name.startsWith(prefix)) {
+                settingNames.add(name);
+            }
+        }
+        return settingNames;
+    }
+
+    @Nullable
+    private static SettingsApplier findValidParentSetting(final String name) {
+        final int idx = name.lastIndexOf('.');
+        if (idx <= 0) {
+            return null;
+        }
+        final String parent = name.substring(0, idx);
+        final SettingsApplier settingsApplier = SUPPORTED_SETTINGS.get(parent);
+        if (settingsApplier != null && settingsApplier instanceof SettingsAppliers.DynamicObjectSettingsApplier) {
+            StringSetting setting = new StringSetting() {
+                @Override
+                public String name() {
+                    return name.substring(idx+1);
+                }
+
+                @Override
+                public Setting parent() {
+                    return ((SettingsAppliers.DynamicObjectSettingsApplier)settingsApplier).setting();
+                }
+            };
+            return new SettingsAppliers.StringSettingsApplier(setting);
+        }
+        return null;
+    }
+
 
 }

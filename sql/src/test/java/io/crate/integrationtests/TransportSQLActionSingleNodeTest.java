@@ -136,7 +136,7 @@ public class TransportSQLActionSingleNodeTest extends SQLTransportIntegrationTes
         ensureGreen();
         refresh();
         execute("select o['i'], o['name'] from t");
-        assertThat((Integer)response.rows()[0][0], is(1));
+        assertThat((Integer) response.rows()[0][0], is(1));
         execute("select distinct table_name, partition_ident from sys.shards where table_name = 't'");
         assertEquals("t| 04132\n", TestingHelpers.printedTable(response.rows()));
     }
@@ -232,7 +232,7 @@ public class TransportSQLActionSingleNodeTest extends SQLTransportIntegrationTes
         assertThat(response.rowCount(), is(1L));
         assertThat((Boolean)response.rows()[0][0], is(false));
 
-        execute("set global transient stats.enabled = true, stats.jobs_log_size = 3, stats.operations_log_size = 4");
+        execute("set global transient stats = { enabled = true, jobs_log_size = 3, operations_log_size = 4 }");
         execute("select settings['stats']['enabled'], settings['stats']['jobs_log_size']," +
                 "settings['stats']['operations_log_size'] from sys.cluster");
         assertThat(response.rowCount(), is(1L));
@@ -247,6 +247,34 @@ public class TransportSQLActionSingleNodeTest extends SQLTransportIntegrationTes
         assertThat((Boolean)response.rows()[0][0], is(false));
         assertThat((Integer)response.rows()[0][1], is(10_000));
         assertThat((Integer)response.rows()[0][2], is(10_000));
+    }
+
+    @Test
+    public void testSetResetGlobalDynamicSetting() throws Exception {
+        execute("set global persistent stats.enabled = true");
+        execute("select settings['stats']['enabled'] from sys.cluster");
+        assertThat(response.rowCount(), is(1L));
+        assertThat((Boolean)response.rows()[0][0], is(true));
+
+        execute("reset global stats.enabled");
+        execute("select settings['stats']['enabled'] from sys.cluster");
+        assertThat(response.rowCount(), is(1L));
+        assertThat((Boolean)response.rows()[0][0], is(false));
+
+        execute("set global transient cluster.routing.allocation.include = {tag='value1'}");
+        execute("select settings['cluster']['routing']['allocation']['include']['tag'] from sys.cluster");
+        assertThat(response.rowCount(), is(1L));
+        assertThat((String)response.rows()[0][0], is("value1"));
+
+        execute("reset global stats cluster.routing.allocation.include.tag");
+        execute("select settings['cluster']['routing']['allocation']['include']['tag'] from sys.cluster");
+        assertThat(response.rowCount(), is(1L));
+        assertThat((String)response.rows()[0][0], is(""));
+
+        execute("reset global stats cluster.routing.allocation.include");
+        execute("select settings['cluster']['routing']['allocation']['include'] from sys.cluster");
+        assertThat(response.rowCount(), is(1L));
+        assertNull(response.rows()[0][0]);
     }
 
 }
