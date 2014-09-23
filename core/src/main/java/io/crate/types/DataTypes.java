@@ -149,7 +149,7 @@ public class DataTypes {
         int i = in.readVInt();
         DataTypeFactory factory = typeRegistry.get(i);
         if (factory == null) {
-            factory = typeRegistry.get(UndefinedType.ID);
+            factory = typeRegistry.get(NotSupportedType.ID);
         }
         DataType type = factory.create();
         type.readFrom(in);
