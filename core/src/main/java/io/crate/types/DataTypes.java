@@ -147,7 +147,11 @@ public class DataTypes {
 
     public static DataType fromStream(StreamInput in) throws IOException {
         int i = in.readVInt();
-        DataType type = typeRegistry.get(i).create();
+        DataTypeFactory factory = typeRegistry.get(i);
+        if (factory == null) {
+            factory = typeRegistry.get(UndefinedType.ID);
+        }
+        DataType type = factory.create();
         type.readFrom(in);
         return type;
     }
