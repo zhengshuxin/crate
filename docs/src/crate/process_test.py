@@ -41,8 +41,8 @@ class GracefulStopTest(unittest.TestCase):
             layer = GracefulStopCrateLayer(self.node_name(i),
                            crate_path(),
                            host=public_ip(),
-                           port=44200+i,
-                           transport_port=44300+i,
+                           port=44210+i,
+                           transport_port=44310+i,
                            multicast=True,
                            cluster_name=self.__class__.__name__)
             client = Client(layer.crate_servers)
