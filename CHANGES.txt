@@ -5,10 +5,41 @@ Changes for Crate Data
 Unreleased
 ==========
 
+ - Fix: If an insert from query statement involved partitioned columns of a
+   partitioned table in the query part those partitioned columns weren't
+   resolved correctly and resulted in null values
+
+ - Added support for scalar functions within the select column list and ORDER
+   BY clause for SELECT statements that get optimized to do
+   primary-key-lookups.
+
+ - Fix: raise an error if an array is inserted into an objects
+   field which is not of type array
+
+ - Throw an error while using unknown root columns on SELECT
+
+2014/10/21 0.44.8
+=================
+
+ - Fix: all group by queries with the primary key(s) or routing column
+   as group key(s) are executed correctly
+
+2014/10/21 0.45.1
+2014/10/21 0.44.7
+=================
+
+ - Fix: non-matching global aggregates on partitioned tables failed
+
+ - Fix: handle boost factor in simple match predicate correctly
+
  - Reduced memory consumption of COPY FROM statements that involve partitioned
    tables.
 
  - Reduced memory consumption during execution of regular SELECT statements
+
+ - Fix: Requests that resulted in a shard failure could cause a NPE during the
+   generation of the error message.
+
 
 2014/10/16 0.45.0
 =================

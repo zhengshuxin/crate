@@ -6,7 +6,7 @@
  * you may not use this file except in compliance with the License.  You may
  * obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -19,10 +19,16 @@
  * software solely pursuant to the terms of the relevant commercial agreement.
  */
 
-package io.crate.executor;
+package io.crate.plugin;
 
-public class ExecutionException extends RuntimeException {
-    public ExecutionException(String message) {
-        super(message);
+import io.crate.CrateComponent;
+import org.elasticsearch.common.settings.Settings;
+import org.elasticsearch.plugins.Plugin;
+
+public class AdminUICrateComponent implements CrateComponent {
+
+    @Override
+    public Plugin createPlugin(Settings settings) {
+        return new AdminUIPlugin(settings);
     }
 }

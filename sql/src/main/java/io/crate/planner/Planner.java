@@ -236,7 +236,7 @@ public class Planner extends AnalysisVisitor<Planner.Context, Plan> {
         if (analysis.outputSymbols() != null && !analysis.outputSymbols().isEmpty()) {
             List<Symbol> columns = new ArrayList<>(analysis.outputSymbols().size());
             for (Symbol symbol : analysis.outputSymbols()) {
-                columns.add(DocReferenceBuildingVisitor.convert(symbol));
+                columns.add(DocReferenceBuildingVisitor.convert(symbol, analysis.table()));
             }
             contextBuilder = contextBuilder.output(columns);
             projection.inputs(contextBuilder.outputs());
@@ -503,31 +503,17 @@ public class Planner extends AnalysisVisitor<Planner.Context, Plan> {
         }
         ESGetNode getNode = new ESGetNode(
                 indexName,
-                tableRelation.ids(),
-                tableRelation.routingValues(),
-                tableInfo.partitionedByColumns());
-        getNode.outputs(contextBuilder.toCollect());
-        getNode.outputTypes(extractDataTypes(analysis.outputSymbols()));
+                analysis.outputSymbols(),
+                extractDataTypes(analysis.outputSymbols()),
+                analysis.ids(),
+                analysis.routingValues(),
+                analysis.sortSymbols(),
+                analysis.reverseFlags(),
+                analysis.nullsFirst(),
+                analysis.limit(),
+                analysis.offset(),
+                analysis.table().partitionedByColumns());
         plan.add(getNode);
-
-        // handle sorting, limit and offset
-        if (analysis.isSorted() || querySpec.limit() != null
-                || querySpec.offset() > 0
-                || context.indexWriterProjection.isPresent()) {
-            TopNProjection tnp = new TopNProjection(
-                    Objects.firstNonNull(querySpec.limit(), Constants.DEFAULT_SELECT_LIMIT),
-                    querySpec.offset(),
-                    contextBuilder.orderBy(),
-                    analysis.reverseFlags(),
-                    analysis.nullsFirst()
-            );
-            tnp.outputs(contextBuilder.outputs());
-            ImmutableList.Builder<Projection> projectionBuilder = ImmutableList.<Projection>builder().add(tnp);
-            if (context.indexWriterProjection.isPresent()) {
-                projectionBuilder.add(context.indexWriterProjection.get());
-            }
-            plan.add(PlanNodeBuilder.localMerge(projectionBuilder.build(), getNode));
-        }
     }
 
     private void collect(SelectAnalysis analysis, Plan plan, Context context) {

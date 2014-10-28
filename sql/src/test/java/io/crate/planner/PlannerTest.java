@@ -49,6 +49,8 @@ import org.junit.rules.ExpectedException;
 
 import java.util.*;
 
+import static io.crate.testing.TestingHelpers.isFunction;
+import static io.crate.testing.TestingHelpers.isReference;
 import static org.hamcrest.Matchers.*;
 import static org.hamcrest.core.Is.is;
 import static org.junit.Assert.*;
@@ -119,6 +121,7 @@ public class PlannerTest {
                     .addPrimaryKey("id")
                     .clusteredBy("id")
                     .build();
+            when(userTableInfo.schemaInfo().name()).thenReturn(DocSchemaInfo.NAME);
             TableIdent charactersTableIdent = new TableIdent(null, "characters");
             charactersTableInfo = TestingTableInfo.builder(charactersTableIdent, RowGranularity.DOC, shardRouting)
                     .add("name", DataTypes.STRING, null)
@@ -126,6 +129,7 @@ public class PlannerTest {
                     .addPrimaryKey("id")
                     .clusteredBy("id")
                     .build();
+            when(charactersTableInfo.schemaInfo().name()).thenReturn(DocSchemaInfo.NAME);
             TableIdent partedTableIdent = new TableIdent(null, "parted");
             TableInfo partedTableInfo = TestingTableInfo.builder(partedTableIdent, RowGranularity.DOC, partedRouting)
                     .add("name", DataTypes.STRING, null)
@@ -140,6 +144,7 @@ public class PlannerTest {
                     .addPrimaryKey("date")
                     .clusteredBy("id")
                     .build();
+            when(partedTableInfo.schemaInfo().name()).thenReturn(DocSchemaInfo.NAME);
             TableIdent emptyPartedTableIdent = new TableIdent(null, "empty_parted");
             TableInfo emptyPartedTableInfo = TestingTableInfo.builder(partedTableIdent, RowGranularity.DOC, shardRouting)
                     .add("name", DataTypes.STRING, null)
@@ -149,6 +154,7 @@ public class PlannerTest {
                     .addPrimaryKey("date")
                     .clusteredBy("id")
                     .build();
+            when(emptyPartedTableInfo.schemaInfo().name()).thenReturn(DocSchemaInfo.NAME);
             when(schemaInfo.getTableInfo(charactersTableIdent.name())).thenReturn(charactersTableInfo);
             when(schemaInfo.getTableInfo(userTableIdent.name())).thenReturn(userTableInfo);
             when(schemaInfo.getTableInfo(partedTableIdent.name())).thenReturn(partedTableInfo);
@@ -1056,27 +1062,28 @@ public class PlannerTest {
 
     @Test
     public void testInsertFromSubQueryESGet() throws Exception {
+        // doesn't use ESGetNode but CollectNode.
+        // Round-trip to handler can be skipped by writing from the shards directly
         Plan plan = plan("insert into users (date, id, name) (select date, id, name from users where id=1)");
         Iterator<PlanNode> iterator = plan.iterator();
         PlanNode planNode = iterator.next();
-        assertThat(planNode, instanceOf(ESGetNode.class));
+        assertThat(planNode, instanceOf(CollectNode.class));
+        CollectNode collectNode = (CollectNode) planNode;
 
-        planNode = iterator.next();
-        assertThat(planNode, instanceOf(MergeNode.class));
-        MergeNode localMergeNode = (MergeNode)planNode;
-
-        assertThat(localMergeNode.projections().size(), is(2));
-        assertThat(localMergeNode.projections().get(1), instanceOf(ColumnIndexWriterProjection.class));
-        ColumnIndexWriterProjection projection = (ColumnIndexWriterProjection)localMergeNode.projections().get(1);
+        assertThat(collectNode.projections().size(), is(1));
+        assertThat(collectNode.projections().get(0), instanceOf(ColumnIndexWriterProjection.class));
+        ColumnIndexWriterProjection projection = (ColumnIndexWriterProjection)collectNode.projections().get(0);
 
         assertThat(projection.columnIdents().size(), is(3));
         assertThat(projection.columnIdents().get(0).fqn(), is("date"));
         assertThat(projection.columnIdents().get(1).fqn(), is("id"));
         assertThat(projection.columnIdents().get(2).fqn(), is("name"));
-
         assertThat(((InputColumn)projection.ids().get(0)).index(), is(1));
         assertThat(((InputColumn)projection.clusteredBy()).index(), is(1));
         assertThat(projection.partitionedBySymbols().isEmpty(), is(true));
+
+        planNode = iterator.next();
+        assertThat(planNode, instanceOf(MergeNode.class));
     }
 
     @Test (expected = UnsupportedFeatureException.class)
@@ -1150,6 +1157,39 @@ public class PlannerTest {
         assertThat(filterProjection.outputs().get(1), instanceOf(InputColumn.class));
         inputColumn = (InputColumn)filterProjection.outputs().get(1);
         assertThat(inputColumn.index(), is(1));
+    }
+
+
+    @Test
+    public void testInsertFromQueryWithDocAndSysColumnsMixed() throws Exception {
+        Plan plan = plan("insert into users (id, name) (select id, sys.nodes.name from users)");
+        Iterator<PlanNode> iterator = plan.iterator();
+        PlanNode planNode = iterator.next();
+        assertThat(planNode, instanceOf(CollectNode.class));
+
+        CollectNode collectNode = (CollectNode) planNode;
+        List<Symbol> toCollect = collectNode.toCollect();
+        assertThat(toCollect.size(), is(2));
+        assertThat(toCollect.get(0), isReference("_doc.id"));
+
+        assertThat((Reference) toCollect.get(1), equalTo(new Reference(new ReferenceInfo(
+            new ReferenceIdent(new TableIdent("sys", "nodes"), "name"), RowGranularity.NODE, DataTypes.STRING))));
+    }
+
+    @Test
+    public void testInsertFromQueryWithPartitionedColumn() throws Exception {
+        Plan plan = plan("insert into users (id, date) (select id, date from parted)");
+        Iterator<PlanNode> iterator = plan.iterator();
+        PlanNode planNode = iterator.next();
+        assertThat(planNode, instanceOf(CollectNode.class));
+
+        CollectNode collectNode = (CollectNode) planNode;
+        List<Symbol> toCollect = collectNode.toCollect();
+        assertThat(toCollect.size(), is(2));
+        assertThat(toCollect.get(0), isFunction("toLong"));
+        assertThat(((Function) toCollect.get(0)).arguments().get(0), isReference("_doc.id"));
+        assertThat((Reference) toCollect.get(1), equalTo(new Reference(new ReferenceInfo(
+            new ReferenceIdent(new TableIdent(null, "parted"), "date"), RowGranularity.PARTITION, DataTypes.TIMESTAMP))));
     }
 
     @Test

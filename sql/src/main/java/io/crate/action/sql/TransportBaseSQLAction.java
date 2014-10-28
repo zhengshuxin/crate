@@ -174,7 +174,7 @@ public abstract class TransportBaseSQLAction<TRequest extends SQLBaseRequest, TR
             } else {
                 processNonData(analysis, request, listener);
             }
-        } catch (Exception e) {
+        } catch (Throwable e) {
             logger.debug("Error executing SQLRequest", e);
             sendResponse(listener, buildSQLActionException(e));
         }
@@ -267,7 +267,7 @@ public abstract class TransportBaseSQLAction<TRequest extends SQLBaseRequest, TR
                                 request.includeTypesOnResponse()
                         );
                     }
-                } catch (Exception e) {
+                } catch (Throwable e) {
                     sendResponse(listener, e);
                     return;
                 }
@@ -384,6 +384,12 @@ public abstract class TransportBaseSQLAction<TRequest extends SQLBaseRequest, TR
             StackTraceElement[] stackTrace1 = e.getStackTrace();
             if (stackTrace1.length > 0) {
                 message = String.format("NPE in %s", stackTrace1[0]);
+            }
+        } else if (e instanceof ArrayIndexOutOfBoundsException) {
+            // in case of ArrayIndexOutOfBoundsExceptions the message is just the index number ...
+            StackTraceElement[] stackTrace1 = e.getStackTrace();
+            if (stackTrace1.length > 0) {
+                message = String.format("ArrayIndexOutOfBoundsException in %s", stackTrace1[0]);
             }
         }
         if (logger.isTraceEnabled()) {

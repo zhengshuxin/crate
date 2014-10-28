@@ -42,6 +42,7 @@ import io.crate.operation.operator.OrOperator;
 import io.crate.operation.projectors.TopN;
 import io.crate.operation.scalar.DateTruncFunction;
 import io.crate.planner.Plan;
+import io.crate.planner.Planner;
 import io.crate.planner.RowGranularity;
 import io.crate.planner.node.dml.ESDeleteByQueryNode;
 import io.crate.planner.node.dml.ESDeleteNode;
@@ -104,6 +105,26 @@ public class TransportExecutorTest extends SQLTransportIntegrationTest {
             new ReferenceIdent(partedTable, "name"), RowGranularity.DOC, DataTypes.STRING));
     Reference parted_date_ref = new Reference(new ReferenceInfo(
             new ReferenceIdent(partedTable, "date"), RowGranularity.DOC, DataTypes.TIMESTAMP));
+
+    private static ESGetNode newGetNode(String index, List<Symbol> outputs, String id) {
+        return newGetNode(index, outputs, Arrays.asList(id));
+    }
+
+    private static ESGetNode newGetNode(String index, List<Symbol> outputs, List<String> ids) {
+        return new ESGetNode(
+                index,
+                outputs,
+                Planner.extractDataTypes(outputs),
+                ids,
+                ids,
+                ImmutableList.<Symbol>of(),
+                new boolean[0],
+                new Boolean[0],
+                null,
+                0,
+                null
+        );
+    }
 
     @Before
     public void transportSetUp() {
@@ -195,8 +216,8 @@ public class TransportExecutorTest extends SQLTransportIntegrationTest {
     public void testESGetTask() throws Exception {
         insertCharacters();
 
-        ESGetNode node = new ESGetNode("characters", "2", "2");
-        node.outputs(ImmutableList.<Symbol>of(id_ref, name_ref));
+        ImmutableList<Symbol> outputs = ImmutableList.<Symbol>of(id_ref, name_ref);
+        ESGetNode node = newGetNode("characters", outputs, "2");
         Plan plan = new Plan();
         plan.add(node);
         Job job = executor.newJob(plan);
@@ -212,9 +233,9 @@ public class TransportExecutorTest extends SQLTransportIntegrationTest {
     public void testESGetTaskWithDynamicReference() throws Exception {
         insertCharacters();
 
-        ESGetNode node = new ESGetNode("characters", "2", "2");
-        node.outputs(ImmutableList.<Symbol>of(id_ref, new DynamicReference(
-                new ReferenceIdent(new TableIdent(null, "characters"), "foo"), RowGranularity.DOC)));
+        ImmutableList<Symbol> outputs = ImmutableList.<Symbol>of(id_ref, new DynamicReference(
+                new ReferenceIdent(new TableIdent(null, "characters"), "foo"), RowGranularity.DOC));
+        ESGetNode node = newGetNode("characters", outputs, "2");
         Plan plan = new Plan();
         plan.add(node);
         Job job = executor.newJob(plan);
@@ -229,8 +250,8 @@ public class TransportExecutorTest extends SQLTransportIntegrationTest {
     @Test
     public void testESMultiGet() throws Exception {
         insertCharacters();
-        ESGetNode node = new ESGetNode("characters", asList("1", "2"), asList("1", "2"));
-        node.outputs(ImmutableList.<Symbol>of(id_ref, name_ref));
+        ImmutableList<Symbol> outputs = ImmutableList.<Symbol>of(id_ref, name_ref);
+        ESGetNode node = newGetNode("characters", outputs, asList("1", "2"));
         Plan plan = new Plan();
         plan.add(node);
         Job job = executor.newJob(plan);
@@ -471,8 +492,8 @@ public class TransportExecutorTest extends SQLTransportIntegrationTest {
         assertThat(taskResult.rowCount(), is(1L));
 
         // verify deletion
-        ESGetNode getNode = new ESGetNode("characters", "2", "2");
-        getNode.outputs(ImmutableList.<Symbol>of(id_ref, name_ref));
+        ImmutableList<Symbol> outputs = ImmutableList.<Symbol>of(id_ref, name_ref);
+        ESGetNode getNode = newGetNode("characters", outputs, "2");
         plan = new Plan();
         plan.add(getNode);
         job = executor.newJob(plan);
@@ -513,8 +534,8 @@ public class TransportExecutorTest extends SQLTransportIntegrationTest {
 
 
         // verify insertion
-        ESGetNode getNode = new ESGetNode("characters", "99", "99");
-        getNode.outputs(ImmutableList.<Symbol>of(id_ref, name_ref));
+        ImmutableList<Symbol> outputs = ImmutableList.<Symbol>of(id_ref, name_ref);
+        ESGetNode getNode = newGetNode("characters", outputs, "99");
         plan = new Plan();
         plan.add(getNode);
         job = executor.newJob(plan);
@@ -632,10 +653,8 @@ public class TransportExecutorTest extends SQLTransportIntegrationTest {
 
         // verify insertion
 
-        ESGetNode getNode = new ESGetNode("characters",
-                Arrays.asList("99", "42"),
-                Arrays.asList("99", "42"));
-        getNode.outputs(ImmutableList.<Symbol>of(id_ref, name_ref));
+        ImmutableList<Symbol> outputs = ImmutableList.<Symbol>of(id_ref, name_ref);
+        ESGetNode getNode = newGetNode("characters", outputs, Arrays.asList("99", "42"));
         plan = new Plan();
         plan.add(getNode);
         job = executor.newJob(plan);
@@ -680,8 +699,8 @@ public class TransportExecutorTest extends SQLTransportIntegrationTest {
         assertThat(taskResult.rowCount(), is(1L));
 
         // verify update
-        ESGetNode getNode = new ESGetNode("characters", Arrays.asList("1"), Arrays.asList("1"));
-        getNode.outputs(ImmutableList.<Symbol>of(id_ref, name_ref));
+        ImmutableList<Symbol> outputs = ImmutableList.<Symbol>of(id_ref, name_ref);
+        ESGetNode getNode = newGetNode("characters", outputs, "1");
         plan = new Plan();
         plan.add(getNode);
         job = executor.newJob(plan);
@@ -733,8 +752,8 @@ public class TransportExecutorTest extends SQLTransportIntegrationTest {
         assertThat(result.get(0).get().errorMessage(), is(nullValue()));
         assertThat(result.get(0).get().rowCount(), is(1L));
 
-        ESGetNode getNode = new ESGetNode("characters", "1", "1");
-        getNode.outputs(Arrays.<Symbol>asList(id_ref, name_ref, version_ref));
+        List<Symbol> outputs = Arrays.<Symbol>asList(id_ref, name_ref, version_ref);
+        ESGetNode getNode = newGetNode("characters", outputs, "1");
         plan = new Plan();
         plan.add(getNode);
         plan.expectsAffectedRows(false);

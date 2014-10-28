@@ -6,7 +6,7 @@
  * you may not use this file except in compliance with the License.  You may
  * obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -19,28 +19,16 @@
  * software solely pursuant to the terms of the relevant commercial agreement.
  */
 
-package io.crate.exceptions;
+package io.crate.udc.plugin;
 
-public class TypeUnknownException extends ResourceUnknownException implements CrateException {
-    private final String type;
+import io.crate.CrateComponent;
+import org.elasticsearch.common.settings.Settings;
+import org.elasticsearch.plugins.Plugin;
 
-    public TypeUnknownException(String type, Throwable e) {
-        super(String.format("Unkown type '%s'", type), e);
-        this.type = type;
-    }
-
-    public TypeUnknownException(String type) {
-        super(String.format("Unkown type '%s'", type));
-        this.type = type;
-    }
+public class UDCCrateComponent implements CrateComponent  {
 
     @Override
-    public int errorCode() {
-        return 4;
-    }
-
-    @Override
-    public Object[] args() {
-        return new Object[]{type};
+    public Plugin createPlugin(Settings settings) {
+        return new UDCPlugin(settings);
     }
 }
