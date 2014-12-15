@@ -8,6 +8,10 @@
     :target: https://travis-ci.org/crate/crate
     :alt: Build status
 
+.. image:: https://img.shields.io/gratipay/crate.svg
+    :target: https://gratipay.com/crate/
+    :alt: Gratipay
+
 ==============================
 CRATE: Your Elastic Data Store
 ==============================
