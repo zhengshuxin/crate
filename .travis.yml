@@ -1,17 +1,18 @@
 language: java
 jdk:
   - openjdk7
-
 env:
   global:
     _JAVA_OPTIONS="-Xmx1g -XX:MaxPermSize=256m -XX:MaxDirectMemorySize=1g"
+
+sudo: false
 
 notifications:
   email: false
 
 before_install:
   - ulimit -u 65535
-
+  - free -m
 script: ./gradlew --parallel -PtestForks=2 test itest -s
 
 after_success:
