@@ -13,7 +13,7 @@ notifications:
 before_install:
   - ulimit -u 65535
   - free -m
-script: ./gradlew --parallel -PtestForks=2 test itest -s
+script: ./gradlew test itest -s
 
 after_success:
   - ./gradlew jacocoReport coveralls
