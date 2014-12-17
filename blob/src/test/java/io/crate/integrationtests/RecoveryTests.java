@@ -21,6 +21,7 @@
 
 package io.crate.integrationtests;
 
+import com.carrotsearch.randomizedtesting.annotations.Repeat;
 import io.crate.blob.PutChunkAction;
 import io.crate.blob.PutChunkRequest;
 import io.crate.blob.StartBlobAction;
@@ -56,6 +57,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
+import static org.hamcrest.Matchers.is;
 import static org.hamcrest.core.IsEqual.equalTo;
 
 @CrateIntegrationTest.ClusterScope(scope = CrateIntegrationTest.Scope.SUITE, numNodes = 0)
@@ -102,7 +104,7 @@ public class RecoveryTests extends CrateIntegrationTest {
         return null;
     }
 
-    private String uploadFile(Client client, String content) {
+    private String uploadFile(Client client, String content) throws InterruptedException {
         byte[] digest = getDigest(content);
         String digestString = Hex.encodeHexString(digest);
         byte[] contentBytes = content.getBytes();
@@ -120,7 +122,6 @@ public class RecoveryTests extends CrateIntegrationTest {
                 try {
                     Thread.sleep(timeBetweenChunks.get());
                 } catch (InterruptedException ex) {
-                    // Restore the interrupted status
                     Thread.currentThread().interrupt();
                 }
                 bytes = new BytesArray(new byte[]{contentBytes[i]});
@@ -133,7 +134,6 @@ public class RecoveryTests extends CrateIntegrationTest {
             }
         }
         logger.trace("Upload finished {} digest {}", content, digestString);
-
         return digestString;
     }
 
@@ -152,6 +152,7 @@ public class RecoveryTests extends CrateIntegrationTest {
         return sb.toString();
     }
 
+    @Repeat(iterations=20)
     @Test
     public void testPrimaryRelocationWhileIndexing() throws Exception {
         final int numberOfRelocations = 1;
@@ -243,7 +244,7 @@ public class RecoveryTests extends CrateIntegrationTest {
         logger.trace("--> marking and waiting for upload threads to stop ...");
         timeBetweenChunks.set(0);
         stop.set(true);
-        stopLatch.await(60, TimeUnit.SECONDS);
+        assertThat("stoplatch did time out", stopLatch.await(60, TimeUnit.SECONDS), is(true));
         logger.trace("--> uploading threads stopped");
 
         logger.trace("--> expected {} got {}", indexCounter.get(), uploadedDigests.size());
@@ -257,7 +258,10 @@ public class RecoveryTests extends CrateIntegrationTest {
         }
 
         for (Thread writer : writers) {
-            writer.join(6000);
+            writer.join(60000);
         }
+
+        // stop UnicastZenPing errors by stopping the secondary first
+        cluster().stopRandomNonMasterNode();
     }
 }

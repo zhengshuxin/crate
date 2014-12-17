@@ -32,11 +32,14 @@ import org.elasticsearch.common.xcontent.XContentHelper;
 import org.elasticsearch.node.NodeBuilder;
 import org.elasticsearch.node.internal.InternalNode;
 import org.hamcrest.Matchers;
+import org.junit.After;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 import java.io.File;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -47,6 +50,8 @@ public class ArrayMapperMetaMigrationTest {
 
     @Rule
     public TemporaryFolder tempFolder = new TemporaryFolder();
+
+    private final List<InternalNode> startedNodes = new LinkedList<>();
 
     private InternalNode startNode(File dataFolder) {
 
@@ -60,7 +65,21 @@ public class ArrayMapperMetaMigrationTest {
                         .put("config.ignore_system_properties", true)
                         .put("gateway.type", "local")).build();
         node.start();
+        startedNodes.add(node);
         return node;
+    }
+
+    /**
+     * safety net in case of failures
+     */
+    @After
+    public void stopAndCloseNodes() {
+        for (InternalNode node : startedNodes) {
+            if (node != null && !node.isClosed()) {
+                node.close();
+            }
+        }
+        startedNodes.clear();
     }
 
     @Test
@@ -118,7 +137,6 @@ public class ArrayMapperMetaMigrationTest {
         // restart the node
         node.stop();
         node.close();
-        node = null;
 
         InternalNode newNode = startNode(dataFolder);
 

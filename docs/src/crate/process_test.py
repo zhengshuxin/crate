@@ -6,6 +6,7 @@ import random
 import socket
 from crate.testing.layer import CrateLayer
 from crate.client.http import Client
+from crate.client.exceptions import ProgrammingError
 from .paths import crate_path
 from .ports import public_ip, random_available_port
 from lovely.testlayers.layer import CascadedLayer
@@ -76,7 +77,16 @@ class GracefulStopTest(unittest.TestCase):
         node_still_up = True
         while node_still_up:
             time.sleep(1)
-            response = client.sql("select name from sys.nodes where name=?", (nodename,))
+            try:
+                response = client.sql("select name from sys.nodes where name=?", (nodename,))
+            except ProgrammingError as e:
+                # hickup when discovery / node was there during analysis,
+                # but is gone when the action is executed
+                if "SQLActionException[DiscoveryNode for id " in e.message:
+                    continue
+                else:
+                    raise e
+
             node_still_up = response.get('rowcount', -1) == 1
 
 
