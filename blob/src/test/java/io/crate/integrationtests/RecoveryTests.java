@@ -152,7 +152,6 @@ public class RecoveryTests extends CrateIntegrationTest {
         return sb.toString();
     }
 
-    @Repeat(iterations=20)
     @Test
     public void testPrimaryRelocationWhileIndexing() throws Exception {
         final int numberOfRelocations = 1;
