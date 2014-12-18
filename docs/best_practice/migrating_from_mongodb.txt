@@ -80,7 +80,7 @@ the table and also insert arbitrary objects into the obj column::
     cr> refresh table mytable2;
     REFRESH OK (... sec)
 
-    cr> select * from mytable2;
+    cr> select dummy, name, newcol, obj from mytable2;
     +-------+----------+--------+----------------------+
     | dummy | name     | newcol | obj                  |
     +-------+----------+--------+----------------------+
