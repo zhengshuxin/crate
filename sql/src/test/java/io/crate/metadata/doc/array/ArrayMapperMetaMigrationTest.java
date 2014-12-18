@@ -21,11 +21,14 @@
 
 package io.crate.metadata.doc.array;
 
+import com.carrotsearch.randomizedtesting.annotations.Repeat;
 import io.crate.Constants;
 import io.crate.metadata.ColumnIdent;
+import org.apache.lucene.util.AbstractRandomizedTest;
 import org.elasticsearch.cluster.ClusterName;
 import org.elasticsearch.cluster.metadata.IndexMetaData;
 import org.elasticsearch.cluster.metadata.MetaData;
+import org.elasticsearch.common.logging.Loggers;
 import org.elasticsearch.common.settings.ImmutableSettings;
 import org.elasticsearch.common.xcontent.XContentFactory;
 import org.elasticsearch.common.xcontent.XContentHelper;
@@ -38,15 +41,19 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
-import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 import static org.hamcrest.core.Is.is;
 
-public class ArrayMapperMetaMigrationTest {
+public class ArrayMapperMetaMigrationTest extends AbstractRandomizedTest {
+
+    static {
+        Loggers.getLogger(ArrayMapperMetaMigration.class).setLevel("TRACE");
+    }
 
     @Rule
     public TemporaryFolder tempFolder = new TemporaryFolder();
@@ -83,6 +90,7 @@ public class ArrayMapperMetaMigrationTest {
     }
 
     @Test
+    @Repeat(iterations = 100)
     public void testMigrateOldIndices() throws Exception {
         File dataFolder = tempFolder.newFolder();
         InternalNode node = startNode(dataFolder);
@@ -148,19 +156,24 @@ public class ArrayMapperMetaMigrationTest {
         IndexMetaData withMeta = metaData.index("with_meta");
 
         // _meta.columns is gone
-        assertThat(withMeta.mapping(Constants.DEFAULT_MAPPING_TYPE).source().string(),
-                is("{\"default\":{\"properties\":{\"a\":{\"type\":\"array\",\"inner\":{\"type\":\"string\",\"index\":\"not_analyzed\"}}}}}"));
+        // use sourceAsMap as it determinsistically strips the mapping type
+        assertThat(toJson(withMeta.mapping(Constants.DEFAULT_MAPPING_TYPE).sourceAsMap()),
+                is("{\"properties\":{\"a\":{\"type\":\"array\",\"inner\":{\"type\":\"string\",\"index\":\"not_analyzed\"}}}}"));
 
         // _meta.columns still there
-        assertThat(withMeta.mapping("other").source().string(),
-                is("{\"other\":{\"_meta\":{\"columns\":{\"a\":{\"collection_type\":\"array\"}}},\"properties\":{\"a\":{\"type\":\"string\",\"index\":\"not_analyzed\"}}}}"));
+        assertThat(toJson(withMeta.mapping("other").sourceAsMap()),
+                is("{\"_meta\":{\"columns\":{\"a\":{\"collection_type\":\"array\"}}},\"properties\":{\"a\":{\"type\":\"string\",\"index\":\"not_analyzed\"}}}"));
         assertThat(withMeta.version(), is(greaterThan(1L)));
         IndexMetaData withOutMeta = newNode.client().admin().cluster().prepareState()
                 .execute().actionGet().getState().metaData().index("without_meta");
         // no change
-        assertThat(withOutMeta.mapping(Constants.DEFAULT_MAPPING_TYPE).source().string(), is("{\"default\":{\"properties\":{\"a\":{\"type\":\"string\",\"index\":\"not_analyzed\"}}}}"));
+        assertThat(toJson(withOutMeta.mapping(Constants.DEFAULT_MAPPING_TYPE).sourceAsMap()), is("{\"properties\":{\"a\":{\"type\":\"string\",\"index\":\"not_analyzed\"}}}"));
         assertThat(withOutMeta.version(), is(1L));
         newNode.close();
+    }
+
+    private String toJson(Map<String, Object> map) throws IOException {
+        return XContentFactory.jsonBuilder().map(map).string();
     }
 
     @Test
