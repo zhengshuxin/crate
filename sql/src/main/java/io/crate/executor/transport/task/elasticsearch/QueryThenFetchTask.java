@@ -22,15 +22,14 @@
 package io.crate.executor.transport.task.elasticsearch;
 
 import com.carrotsearch.hppc.IntArrayList;
+import com.google.common.base.Optional;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
 import io.crate.action.sql.query.QueryShardRequest;
 import io.crate.action.sql.query.TransportQueryShardAction;
 import io.crate.exceptions.Exceptions;
 import io.crate.exceptions.FailedShardsException;
-import io.crate.executor.QueryResult;
-import io.crate.executor.JobTask;
-import io.crate.executor.TaskResult;
+import io.crate.executor.*;
 import io.crate.metadata.*;
 import io.crate.metadata.doc.DocSysColumns;
 import io.crate.planner.node.dql.QueryThenFetchNode;
@@ -39,6 +38,7 @@ import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.util.BytesRef;
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.search.SearchRequest;
+import org.elasticsearch.action.search.SearchScrollRequest;
 import org.elasticsearch.action.search.ShardSearchFailure;
 import org.elasticsearch.action.support.TransportActions;
 import org.elasticsearch.cluster.ClusterService;
@@ -46,18 +46,23 @@ import org.elasticsearch.cluster.ClusterState;
 import org.elasticsearch.cluster.block.ClusterBlockLevel;
 import org.elasticsearch.cluster.node.DiscoveryNode;
 import org.elasticsearch.cluster.node.DiscoveryNodes;
+import org.elasticsearch.common.Nullable;
 import org.elasticsearch.common.collect.Tuple;
 import org.elasticsearch.common.logging.ESLogger;
 import org.elasticsearch.common.logging.Loggers;
+import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.util.concurrent.AtomicArray;
 import org.elasticsearch.common.util.concurrent.EsRejectedExecutionException;
+import org.elasticsearch.search.Scroll;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchShardTarget;
 import org.elasticsearch.search.action.SearchServiceListener;
 import org.elasticsearch.search.action.SearchServiceTransportAction;
 import org.elasticsearch.search.controller.SearchPhaseController;
 import org.elasticsearch.search.fetch.FetchSearchResult;
+import org.elasticsearch.search.fetch.QueryFetchSearchResult;
 import org.elasticsearch.search.fetch.ShardFetchSearchRequest;
+import org.elasticsearch.search.internal.InternalScrollSearchRequest;
 import org.elasticsearch.search.internal.InternalSearchResponse;
 import org.elasticsearch.search.query.QueryPhaseExecutionException;
 import org.elasticsearch.search.query.QuerySearchResult;
@@ -65,11 +70,17 @@ import org.elasticsearch.threadpool.ThreadPool;
 
 import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
-public class QueryThenFetchTask extends JobTask {
+public class QueryThenFetchTask extends JobTask implements PagableTask {
 
     private final ESLogger logger = Loggers.getLogger(this.getClass());
+
+    private Optional<PageInfo> pageInfo;
+    private Optional<TimeValue> keepAlive;
+    private volatile int limit;
+    private volatile int offset;
 
     private final QueryThenFetchNode searchNode;
     private final TransportQueryShardAction transportQueryShardAction;
@@ -81,17 +92,19 @@ public class QueryThenFetchTask extends JobTask {
 
     private final Routing routing;
     private final AtomicArray<IntArrayList> docIdsToLoad;
-    private final List<Tuple<String, QueryShardRequest>> requests;
     private final AtomicArray<QuerySearchResult> firstResults;
     private final AtomicArray<FetchSearchResult> fetchResults;
     private final DiscoveryNodes nodes;
     private final int numColumns;
+    private final int numShards;
     private final ClusterState state;
     private final List<FieldExtractor<SearchHit>> extractors;
     volatile ScoreDoc[] sortedShardList;
     private volatile AtomicArray<ShardSearchFailure> shardFailures;
     private final Object shardFailuresMutex = new Object();
-
+    private final Map<SearchShardTarget, Long> searchContextIds;
+    private List<Tuple<String, QueryShardRequest>> requests;
+    private List<Reference> references;
 
     /**
      * dummy request required to re-use the searchService transport
@@ -121,6 +134,9 @@ public class QueryThenFetchTask extends JobTask {
         results = Arrays.<ListenableFuture<TaskResult>>asList(result);
 
         routing = searchNode.routing();
+        pageInfo = Optional.absent();
+        this.limit = searchNode.limit();
+        this.offset = searchNode.offset();
 
         Context context = new Context(functions);
         Visitor fieldExtractorVisitor = new Visitor(searchNode.partitionBy());
@@ -128,12 +144,15 @@ public class QueryThenFetchTask extends JobTask {
         for (Symbol symbol : searchNode.outputs()) {
             extractors.add(fieldExtractorVisitor.process(symbol, context));
         }
-        requests = prepareRequests(context.references);
-        docIdsToLoad = new AtomicArray<>(requests.size());
-        firstResults = new AtomicArray<>(requests.size());
-        fetchResults = new AtomicArray<>(requests.size());
+        references = context.references;
+        numShards = searchNode.routing().numShards();
 
+        searchContextIds = new ConcurrentHashMap<>(numShards);
+        docIdsToLoad = new AtomicArray<>(numShards);
+        firstResults = new AtomicArray<>(numShards);
+        fetchResults = new AtomicArray<>(numShards);
         numColumns = searchNode.outputs().size();
+        keepAlive = Optional.absent();
     }
 
     private static FieldExtractor<SearchHit> buildExtractor(Reference reference, List<ReferenceInfo> partitionBy) {
@@ -182,8 +201,12 @@ public class QueryThenFetchTask extends JobTask {
 
     @Override
     public void start() {
+
+        // create initial requests
+        requests = prepareRequests(references);
+
         if (!routing.hasLocations() || requests.size() == 0) {
-            result.set(QueryResult.EMPTY_RESULT);
+            result.set(PagableTaskResult.EMPTY_PAGABLE_RESULT);
         }
 
         state.blocks().globalBlockedRaiseException(ClusterBlockLevel.READ);
@@ -223,10 +246,12 @@ public class QueryThenFetchTask extends JobTask {
                                     searchNode.orderBy(),
                                     searchNode.reverseFlags(),
                                     searchNode.nullsFirst(),
-                                    searchNode.limit(),
-                                    searchNode.offset(),
+                                    limit,
+                                    offset,
                                     searchNode.whereClause(),
-                                    searchNode.partitionBy()
+                                    searchNode.partitionBy(),
+                                    pageInfo,
+                                    keepAlive
                             )
                     ));
                 }
@@ -236,8 +261,17 @@ public class QueryThenFetchTask extends JobTask {
     }
 
     private void moveToSecondPhase() throws IOException {
-        // boolean useScroll = !useSlowScroll && request.scroll() != null;
+
+        ScoreDoc[] lastEmittedDocs = null;
+        if (pageInfo.isPresent()) {
+            lastEmittedDocs = searchPhaseController.getLastEmittedDocPerShard(
+                    searchPhaseController.sortDocs(true, firstResults),
+                    numShards);
+        }
+
+        // no scroll used yet, we want the offset to be applied on the first request
         sortedShardList = searchPhaseController.sortDocs(false, firstResults);
+
         searchPhaseController.fillDocIdsToLoad(docIdsToLoad, sortedShardList);
 
         if (docIdsToLoad.asList().isEmpty()) {
@@ -246,10 +280,11 @@ public class QueryThenFetchTask extends JobTask {
         }
 
         final AtomicInteger counter = new AtomicInteger(docIdsToLoad.asList().size());
+
         for (AtomicArray.Entry<IntArrayList> entry : docIdsToLoad.asList()) {
             QuerySearchResult queryResult = firstResults.get(entry.index);
             DiscoveryNode node = nodes.get(queryResult.shardTarget().nodeId());
-            ShardFetchSearchRequest fetchRequest = createFetchRequest(queryResult, entry);
+            ShardFetchSearchRequest fetchRequest = createFetchRequest(queryResult, entry, lastEmittedDocs);
             executeFetch(entry.index, queryResult.shardTarget(), counter, fetchRequest, node);
         }
     }
@@ -331,7 +366,12 @@ public class QueryThenFetchTask extends JobTask {
                                 rows[r][c] = extractors.get(c).extract(hits[r]);
                             }
                         }
-                        result.set(new QueryResult(rows));
+
+                        if (pageInfo.isPresent()) {
+                            result.set(new QTFScrollTaskResult(rows, true));
+                        } else {
+                            result.set(SinglePageTaskResult.singlePage(rows));
+                        }
                     } catch (Throwable t) {
                         result.setException(t);
                     } finally {
@@ -348,9 +388,92 @@ public class QueryThenFetchTask extends JobTask {
         }
     }
 
+    class QTFScrollTaskResult implements PagableTaskResult {
+
+        private final Object[][] rows;
+        private final boolean hasNextPage;
+        private final SettableFuture<PagableTaskResult> future;
+
+        public QTFScrollTaskResult(Object[][] rows, boolean hasNextPage) {
+            this.rows = rows;
+            this.hasNextPage = hasNextPage;
+            future = SettableFuture.create();
+        }
+
+        @Override
+        public ListenableFuture<PagableTaskResult> fetch(PageInfo pageInfo) {
+            if (!hasNextPage) {
+                throw new NoSuchElementException();
+            } else {
+                SearchScrollRequest dummyScrollRequest = new SearchScrollRequest();
+                if (keepAlive.isPresent()) {
+                    dummyScrollRequest.scroll(new Scroll(keepAlive.get()));
+                }
+
+                final AtomicInteger numOps = new AtomicInteger(numShards);
+                final AtomicArray<QueryFetchSearchResult> queryFetchResults = new AtomicArray<>(numShards);
+
+                for (final Map.Entry<SearchShardTarget, Long> entry : searchContextIds.entrySet()) {
+                    DiscoveryNode node = nodes.get(entry.getKey().nodeId());
+
+                    InternalScrollSearchRequest internalRequest = new InternalScrollSearchRequest(dummyScrollRequest, entry.getValue());
+                    searchServiceTransportAction.sendExecuteFetch(node, internalRequest, new SearchServiceListener<QueryFetchSearchResult>() {
+                        @Override
+                        public void onResult(QueryFetchSearchResult result) {
+
+                            result.shardTarget(entry.getKey());
+                            queryFetchResults.set(entry.getKey().getShardId(), result);
+
+                            if (numOps.decrementAndGet() == 0) {
+                                try {
+                                    // TODO: execute in thread pool
+                                    ScoreDoc[] sortedShardList = searchPhaseController.sortDocs(true, queryFetchResults);
+                                    InternalSearchResponse response = searchPhaseController.merge(sortedShardList, queryFetchResults, queryFetchResults);
+                                    final SearchHit[] hits = response.hits().hits();
+                                    final Object[][] rows = new Object[hits.length][numColumns];
+
+                                    for (int r = 0; r < hits.length; r++) {
+                                        rows[r] = new Object[numColumns];
+                                        for (int c = 0; c < numColumns; c++) {
+                                            rows[r][c] = extractors.get(c).extract(hits[r]);
+                                        }
+                                    }
+                                    future.set(new QTFScrollTaskResult(rows, rows.length > 0));
+                                } catch (Throwable e) {
+                                    // TODO
+                                    e.printStackTrace();
+                                }
+                            }
+                        }
+
+                        @Override
+                        public void onFailure(Throwable t) {
+                            future.setException(t);
+                        }
+                    });
+
+                }
+            }
+            return future;
+        }
+
+        @Override
+        public Object[][] rows() {
+            return rows;
+        }
+
+        @javax.annotation.Nullable
+        @Override
+        public String errorMessage() {
+            return null;
+        }
+    }
+
     private void releaseIrrelevantSearchContexts(AtomicArray<QuerySearchResult> firstResults,
                                                  AtomicArray<IntArrayList> docIdsToLoad) {
-        if (docIdsToLoad == null) {
+
+        // don't release searchcontexts yet, if we use scroll
+        if (docIdsToLoad == null || pageInfo.isPresent()) {
             return;
         }
 
@@ -365,7 +488,11 @@ public class QueryThenFetchTask extends JobTask {
     }
 
     protected ShardFetchSearchRequest createFetchRequest(QuerySearchResult queryResult,
-                                                    AtomicArray.Entry<IntArrayList> entry) {
+                                                    AtomicArray.Entry<IntArrayList> entry, @Nullable ScoreDoc[] lastEmittedDocsPerShard) {
+        if (lastEmittedDocsPerShard != null) {
+            ScoreDoc lastEmittedDoc = lastEmittedDocsPerShard[entry.index];
+            return new ShardFetchSearchRequest(EMPTY_SEARCH_REQUEST, queryResult.id(), entry.value, lastEmittedDoc);
+        }
         return new ShardFetchSearchRequest(EMPTY_SEARCH_REQUEST, queryResult.id(), entry.value);
     }
 
@@ -377,6 +504,21 @@ public class QueryThenFetchTask extends JobTask {
     @Override
     public void upstreamResult(List<ListenableFuture<TaskResult>> result) {
         throw new UnsupportedOperationException("Can't have upstreamResults");
+    }
+
+    @Override
+    public void setPaging(PageInfo pageInfo) {
+        this.pageInfo = Optional.of(pageInfo);
+
+        // override initial limit to size of first page
+        this.limit = pageInfo.size();
+    }
+
+    /**
+     * set the keep alive value for the search context on the shards
+     */
+    public void setKeepAlive(TimeValue keepAlive) {
+        this.keepAlive = Optional.of(keepAlive);
     }
 
     class QueryShardResponseListener implements ActionListener<QuerySearchResult> {
@@ -401,8 +543,10 @@ public class QueryThenFetchTask extends JobTask {
             Tuple<String, QueryShardRequest> requestTuple = requests.get(requestIdx);
             QueryShardRequest request = requestTuple.v2();
 
+
             querySearchResult.shardTarget(
                     new SearchShardTarget(requestTuple.v1(), request.index(), request.shardId()));
+            searchContextIds.put(querySearchResult.shardTarget(), querySearchResult.id());
             firstResults.set(requestIdx, querySearchResult);
             if (totalOps.incrementAndGet() == expectedOps) {
                 try {

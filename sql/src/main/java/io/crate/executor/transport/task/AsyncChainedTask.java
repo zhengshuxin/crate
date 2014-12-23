@@ -51,7 +51,7 @@ public abstract class AsyncChainedTask extends JobTask {
         ListenableFuture<TaskResult> resultFallback = Futures.withFallback(result, new FutureFallback<TaskResult>() {
             @Override
             public ListenableFuture<TaskResult> create(@Nonnull Throwable t) throws Exception {
-                return Futures.immediateFuture(RowCountResult.error(t));
+                return Futures.<TaskResult>immediateFuture(RowCountResult.error(t));
             }
         });
         resultList = new ArrayList<>();

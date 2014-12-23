@@ -21,9 +21,11 @@
 
 package io.crate.action.sql.query;
 
+import com.google.common.base.Optional;
 import com.google.common.collect.ImmutableList;
 import com.google.common.util.concurrent.SettableFuture;
 import io.crate.analyze.WhereClause;
+import io.crate.executor.PageInfo;
 import io.crate.integrationtests.SQLTransportIntegrationTest;
 import io.crate.metadata.ReferenceInfo;
 import io.crate.planner.symbol.Reference;
@@ -32,6 +34,7 @@ import io.crate.test.integration.CrateIntegrationTest;
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.cluster.ClusterService;
 import org.elasticsearch.cluster.node.DiscoveryNode;
+import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.search.query.QuerySearchResult;
 import org.hamcrest.Matchers;
 import org.junit.Test;
@@ -62,7 +65,9 @@ public class TransportQueryShardActionTest extends SQLTransportIntegrationTest {
                         10,
                         0,
                         WhereClause.MATCH_ALL,
-                        ImmutableList.<ReferenceInfo>of()
+                        ImmutableList.<ReferenceInfo>of(),
+                        Optional.<PageInfo>absent(),
+                        Optional.<TimeValue>absent()
                 ),
                 new ActionListener<QuerySearchResult>() {
                     @Override

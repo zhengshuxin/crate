@@ -49,7 +49,6 @@ public class Routing implements Streamable {
 
     /**
      * get the number of shards in this routing for a node with given nodeId
-     * @param nodeId
      * @return int >= 0
      */
     public int numShards(String nodeId) {
@@ -59,6 +58,24 @@ public class Routing implements Streamable {
             if (nodeRouting != null) {
                 for (Set<Integer> shardIds : nodeRouting.values()) {
                     count += shardIds.size();
+                }
+            }
+        }
+        return count;
+    }
+
+    /**
+     * get the number of shards in this routing
+     * @return int >= 0
+     */
+    public int numShards() {
+        int count = 0;
+        if (hasLocations()) {
+            for (Map<String, Set<Integer>> nodeRouting : locations.values()) {
+                if (nodeRouting != null) {
+                    for (Set<Integer> shardIds : nodeRouting.values()) {
+                        count += shardIds.size();
+                    }
                 }
             }
         }

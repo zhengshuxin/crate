@@ -26,11 +26,9 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import io.crate.Constants;
-import io.crate.executor.TaskResult;
-import io.crate.metadata.PartitionName;
+import io.crate.action.sql.query.CrateSearchService;
 import io.crate.analyze.WhereClause;
-import io.crate.executor.Job;
-import io.crate.executor.QueryResult;
+import io.crate.executor.*;
 import io.crate.executor.task.join.NestedLoopTask;
 import io.crate.executor.transport.task.elasticsearch.*;
 import io.crate.integrationtests.SQLTransportIntegrationTest;
@@ -68,6 +66,7 @@ import org.elasticsearch.cluster.node.DiscoveryNode;
 import org.elasticsearch.common.bytes.BytesReference;
 import org.elasticsearch.common.collect.ImmutableOpenMap;
 import org.elasticsearch.common.collect.MapBuilder;
+import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentFactory;
 import org.elasticsearch.search.SearchHits;
@@ -248,8 +247,8 @@ public class TransportExecutorTest extends SQLTransportIntegrationTest {
         assertThat(result.length, is(1));
         assertThat(result[0].length, is(2));
 
-        assertThat(((BytesRef)result[0][0]).utf8ToString(), is(clusterName.value()));
-        assertThat((Float)result[0][1], is(2.3f));
+        assertThat(((BytesRef) result[0][0]).utf8ToString(), is(clusterName.value()));
+        assertThat((Float) result[0][1], is(2.3f));
     }
 
     @Test
@@ -586,7 +585,7 @@ public class TransportExecutorTest extends SQLTransportIntegrationTest {
         Object[][] objects = result.get(0).get().rows();
 
         assertThat(objects.length, is(1));
-        assertThat((Integer)objects[0][0], is(99));
+        assertThat((Integer) objects[0][0], is(99));
         assertThat((String)objects[0][1], is("Marvin"));
     }
 
@@ -871,7 +870,7 @@ public class TransportExecutorTest extends SQLTransportIntegrationTest {
         assertThat((Integer)rows[0][0], is(1));
         assertThat((String)rows[0][1], is("mostly harmless"));
 
-        assertThat((Integer)rows[1][0], is(3));
+        assertThat((Integer) rows[1][0], is(3));
         assertThat((String)rows[1][1], is("mostly harmless"));
 
     }
@@ -1071,5 +1070,53 @@ public class TransportExecutorTest extends SQLTransportIntegrationTest {
                         "4| Arthur| true| Douglas Adams\n" +
                         "1| Arthur| false| Douglas Adams\n" +
                         "1| Arthur| false| Douglas Adams\n"));
+    }
+
+    @Test
+    public void testPagedQueryThenFetch() throws Exception {
+        insertCharacters();
+        DocTableInfo characters = docSchemaInfo.getTableInfo("characters");
+
+        QueryThenFetchNode qtfNode = new QueryThenFetchNode(
+                characters.getRouting(WhereClause.MATCH_ALL),
+                Arrays.<Symbol>asList(idRef, nameRef, femaleRef),
+                Arrays.<Symbol>asList(nameRef, idRef),
+                new boolean[]{false, false},
+                new Boolean[]{null, null},
+                5,
+                0,
+                WhereClause.MATCH_ALL,
+                null
+        );
+
+        List<Task> tasks = executor.newTasks(qtfNode, UUID.randomUUID());
+        assertThat(tasks.size(), is(1));
+        QueryThenFetchTask qtfTask = (QueryThenFetchTask)tasks.get(0);
+        PageInfo pageInfo = PageInfo.firstPage(2);
+        qtfTask.setPaging(pageInfo);
+        qtfTask.setKeepAlive(TimeValue.timeValueSeconds(10));
+
+        List<ListenableFuture<TaskResult>> results = executor.execute(ImmutableList.<Task>of(qtfTask), null);
+        assertThat(results.size(), is(1));
+        ListenableFuture<TaskResult> resultFuture = results.get(0);
+        TaskResult result = resultFuture.get();
+        assertThat(result, instanceOf(PagableTaskResult.class));
+        assertThat(TestingHelpers.printedTable(result.rows()), is(
+                "1| Arthur| false\n" +
+                "4| Arthur| true\n"
+                ));
+        ListenableFuture<PagableTaskResult> nextPageResultFuture = ((PagableTaskResult)result).fetch(pageInfo.nextPage(2));
+        PagableTaskResult nextPageResult = nextPageResultFuture.get();
+        assertThat(TestingHelpers.printedTable(nextPageResult.rows()), is(
+                "2| Ford| false\n" +
+                "3| Trillian| true\n"
+        ));
+
+        Object[][] nextRows = nextPageResult.fetch(pageInfo.nextPage(2)).get().rows();
+        assertThat(nextRows.length, is(0));
+
+        for (CrateSearchService css : cluster().getInstances(CrateSearchService.class)) {
+            css.freeAllScrollContexts();
+        }
     }
 }

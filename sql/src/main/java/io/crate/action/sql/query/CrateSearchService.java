@@ -68,9 +68,7 @@ import org.elasticsearch.search.SearchShardTarget;
 import org.elasticsearch.search.dfs.DfsPhase;
 import org.elasticsearch.search.fetch.FetchPhase;
 import org.elasticsearch.search.fetch.source.FetchSourceContext;
-import org.elasticsearch.search.internal.DefaultSearchContext;
 import org.elasticsearch.search.internal.SearchContext;
-import org.elasticsearch.search.internal.ShardSearchLocalRequest;
 import org.elasticsearch.search.query.QueryPhase;
 import org.elasticsearch.search.query.QuerySearchResult;
 import org.elasticsearch.search.sort.SortParseElement;
@@ -163,9 +161,6 @@ public class CrateSearchService extends InternalSearchService {
      * but uses Symbols to create the lucene query / sorting.
      * </p>
      *
-     * <p>
-     * Note: Scrolling isn't supported.
-     * </p>
      */
     private SearchContext createContext(QueryShardRequest request, @Nullable Engine.Searcher searcher) {
         IndexService indexService = indicesService.indexServiceSafe(request.index());
@@ -176,17 +171,12 @@ public class CrateSearchService extends InternalSearchService {
                 request.index(),
                 request.shardId()
         );
-
         Engine.Searcher engineSearcher = searcher == null ? indexShard.acquireSearcher("search") : searcher;
-
-        ShardSearchLocalRequest shardRequest = new ShardSearchLocalRequest(
-                new String[] { Constants.DEFAULT_MAPPING_TYPE },
-                System.currentTimeMillis()
-        );
-        // TODO: use own CrateSearchContext that doesn't require ShardSearchRequest
-        SearchContext context = new DefaultSearchContext(
+        SearchContext context = new CrateSearchContext(
                 idGenerator.incrementAndGet(),
-                shardRequest,
+                0, // TODO: is this necessary? seems not, wasn't set before
+                new String[] { Constants.DEFAULT_MAPPING_TYPE },
+                System.currentTimeMillis(),
                 searchShardTarget,
                 engineSearcher,
                 indexService,
@@ -195,11 +185,18 @@ public class CrateSearchService extends InternalSearchService {
                 cacheRecycler,
                 pageCacheRecycler,
                 bigArrays,
-                threadPool.estimatedTimeInMillisCounter()
+                threadPool.estimatedTimeInMillisCounter(),
+                null
         );
         SearchContext.setCurrent(context);
 
         try {
+            // apply scroll value
+            if (request.scroll().isPresent()) {
+                context.scroll(request.scroll().get());
+                context.useSlowScroll(false);
+            }
+
             LuceneQueryBuilder builder = new LuceneQueryBuilder(functions, context, indexService.cache());
             LuceneQueryBuilder.Context ctx = builder.convert(request.whereClause());
             context.parsedQuery(new ParsedQuery(ctx.query(), ImmutableMap.<String, Filter>of()));
@@ -217,7 +214,6 @@ public class CrateSearchService extends InternalSearchService {
 
             context.from(request.offset());
             context.size(request.limit());
-
             // pre process
             dfsPhase.preProcess(context);
             queryPhase.preProcess(context);
@@ -225,7 +221,11 @@ public class CrateSearchService extends InternalSearchService {
 
             // compute the context keep alive
             long keepAlive = defaultKeepAlive;
+            if (request.scroll().isPresent() && request.scroll().get().keepAlive() != null) {
+                keepAlive = request.scroll().get().keepAlive().millis();
+            }
             context.keepAlive(keepAlive);
+
         } catch (Throwable e) {
             context.close();
             throw ExceptionsHelper.convertToRuntime(e);

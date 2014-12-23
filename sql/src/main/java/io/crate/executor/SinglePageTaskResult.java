@@ -21,20 +21,36 @@
 
 package io.crate.executor;
 
-/**
- * A task that is able to return paged results.
- * By contract it should return implementations of
- * {@linkplain io.crate.executor.PagableTaskResult} (nested in futures)
- * on {@linkplain #result()}.
- */
-public interface PagableTask extends Task {
+import com.google.common.util.concurrent.ListenableFuture;
 
-    /**
-     * Enable paging and set the initial paging information
-     * for the first execution.
-     *
-     * Must be called before {@linkplain #start()} is called
-     * or it has no effect.
-     */
-    public void setPaging(PageInfo pageInfo);
+import javax.annotation.Nullable;
+import java.util.NoSuchElementException;
+
+public class SinglePageTaskResult implements PagableTaskResult {
+
+    private final Object[][] rows;
+
+    public SinglePageTaskResult(Object[][] rows) {
+        this.rows = rows;
+    }
+
+    @Override
+    public ListenableFuture<PagableTaskResult> fetch(PageInfo pageInfo) {
+        throw new NoSuchElementException();
+    }
+
+    @Override
+    public Object[][] rows() {
+        return rows;
+    }
+
+    @Nullable
+    @Override
+    public String errorMessage() {
+        return null;
+    }
+
+    public static PagableTaskResult singlePage(Object[][] rows) {
+        return new SinglePageTaskResult(rows);
+    }
 }

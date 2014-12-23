@@ -23,6 +23,7 @@ package io.crate.integrationtests;
 
 import com.google.common.base.Joiner;
 import com.google.common.base.Predicate;
+import io.crate.Constants;
 import io.crate.TimestampFormat;
 import io.crate.action.sql.SQLActionException;
 import io.crate.action.sql.SQLBulkResponse;
@@ -33,8 +34,10 @@ import org.elasticsearch.action.admin.cluster.health.ClusterHealthStatus;
 import org.elasticsearch.action.admin.indices.exists.indices.IndicesExistsRequest;
 import org.elasticsearch.action.get.GetResponse;
 import org.elasticsearch.common.collect.MapBuilder;
+import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentFactory;
+import org.elasticsearch.search.Scroll;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
@@ -2927,6 +2930,24 @@ public class TransportSQLActionTest extends SQLTransportIntegrationTest {
         execute("create table t (name string) with (number_of_replicas=0)");
         ensureGreen();
         execute("insert into t (name, score) values ('Ford', 1.2)");
+    }
+
+    @Test
+    public void testScrollApi() throws Exception {
+        execute("create table t (num integer) with (number_of_replicas=0)");
+        ensureGreen();
+        execute("insert into t values (?)", new Object[][]{
+                new Object[] { 1 },
+                new Object[] { 2 },
+                new Object[] { 3 },
+                new Object[] { 4 },
+                new Object[] { 5 }
+        });
+        refresh();
+
+        client().prepareSearch("t").addField("name").setFetchSource(true).setTypes(Constants.DEFAULT_MAPPING_TYPE)
+                .setScroll(new Scroll(new TimeValue(5000))).setQuery(MapBuilder.newMapBuilder().put("match_all", MapBuilder.newMapBuilder().map()).map())
+                .execute().actionGet();
     }
 }
 

@@ -21,8 +21,10 @@
 
 package io.crate.action.sql.query;
 
+import com.google.common.base.Optional;
 import com.google.common.collect.ImmutableList;
 import io.crate.analyze.WhereClause;
+import io.crate.executor.PageInfo;
 import io.crate.metadata.ReferenceInfo;
 import io.crate.operation.operator.EqOperator;
 import io.crate.planner.symbol.Function;
@@ -32,6 +34,7 @@ import io.crate.planner.symbol.Symbol;
 import io.crate.types.DataTypes;
 import org.elasticsearch.common.io.stream.BytesStreamInput;
 import org.elasticsearch.common.io.stream.BytesStreamOutput;
+import org.elasticsearch.common.unit.TimeValue;
 import org.junit.Test;
 
 import static io.crate.testing.TestingHelpers.createFunction;
@@ -56,7 +59,9 @@ public class QueryShardRequestTest {
                 10,
                 0,
                 whereClause,
-                ImmutableList.<ReferenceInfo>of()
+                ImmutableList.<ReferenceInfo>of(),
+                Optional.<PageInfo>absent(),
+                Optional.of(TimeValue.timeValueHours(3))
         );
 
         BytesStreamOutput out = new BytesStreamOutput();
