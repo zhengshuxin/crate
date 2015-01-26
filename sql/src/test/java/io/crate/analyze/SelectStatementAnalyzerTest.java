@@ -1603,4 +1603,9 @@ public class SelectStatementAnalyzerTest extends BaseAnalyzerTest {
         Symbol argument = ((Function) symbol).arguments().get(0);
         assertThat(((Field) argument).path().outputName(), is("timestamp"));
     }
+
+    @Test
+    public void selectCurrentTimeStamp() throws Exception {
+        SelectAnalyzedStatement stmt = analyze("select CURRENT_TIMESTAMP from sys.cluster");
+    }
 }

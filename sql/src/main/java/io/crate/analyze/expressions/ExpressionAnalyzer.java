@@ -26,6 +26,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Lists;
 import io.crate.analyze.*;
 import io.crate.analyze.relations.FieldResolver;
 import io.crate.analyze.where.WhereClauseValidator;
@@ -44,6 +45,7 @@ import io.crate.operation.predicate.NotPredicate;
 import io.crate.operation.scalar.ExtractFunctions;
 import io.crate.operation.scalar.SubscriptFunction;
 import io.crate.operation.scalar.cast.CastFunctionResolver;
+import io.crate.operation.scalar.timestamp.CurrentTimestampFunction;
 import io.crate.planner.RowGranularity;
 import io.crate.planner.symbol.*;
 import io.crate.planner.symbol.Literal;
@@ -361,6 +363,14 @@ public class ExpressionAnalyzer {
         protected Symbol visitExpression(Expression node, ExpressionAnalysisContext context) {
             throw new UnsupportedOperationException(String.format(
                     "Unsupported expression %s", ExpressionFormatter.formatExpression(node)));
+        }
+
+        @Override
+        protected Symbol visitCurrentTime(CurrentTime node, ExpressionAnalysisContext context) {
+            List<Symbol> args = Lists.<Symbol>newArrayList(
+                    Literal.newLiteral(node.getPrecision().or(CurrentTimestampFunction.DEFAULT_PRECISION))
+            );
+            return context.allocateFunction(CurrentTimestampFunction.INFO, args);
         }
 
         @Override
