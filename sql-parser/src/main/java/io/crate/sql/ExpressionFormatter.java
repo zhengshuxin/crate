@@ -83,21 +83,21 @@ public final class ExpressionFormatter {
             StringBuilder builder = new StringBuilder();
             switch (node.getType()) {
                 case TIME:
-                    builder.append("current_time");
+                    builder.append("CURRENT_TIME");
                     break;
                 case DATE:
-                    builder.append("current_date");
+                    builder.append("CURRENT_DATE");
                     break;
                 case TIMESTAMP:
-                    builder.append("current_timestamp");
+                    builder.append("CURRENT_TIMESTAMP");
                     break;
                 default:
                     throw new UnsupportedOperationException("not yet implemented: " + node.getType());
             }
 
-            if (node.getPrecision() != null) {
+            if (node.getPrecision().isPresent()) {
                 builder.append('(')
-                        .append(node.getPrecision())
+                        .append(node.getPrecision().get())
                         .append(')');
             }
 
