@@ -26,6 +26,8 @@ import io.crate.executor.*;
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.Iterator;
+import java.util.NoSuchElementException;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -39,11 +41,9 @@ class JoinContext implements Closeable {
     private final AtomicBoolean inFirstIteration;
 
     private PageInfo innerPageInfo;
-    private Page innerPage;
     Iterator<Object[]> innerPageIterator;
 
     private PageInfo outerPageInfo;
-    private Page outerPage;
     Iterator<Object[]> outerPageIterator;
     private Object[] outerRow;
 
@@ -59,12 +59,10 @@ class JoinContext implements Closeable {
         this.outerTaskResult = FetchedRowsPageableTaskResult.wrap(outerTaskResult, outerPageInfo);
         this.outerPageInfo = outerPageInfo;
         this.outerPageSize = outerPageInfo.size();
-        this.outerPage = this.outerTaskResult.page();
 
         this.innerTaskResult = FetchedRowsPageableTaskResult.wrap(innerTaskResult, innerPageInfo);
         this.innerPageInfo = innerPageInfo;
         this.innerPageSize = innerPageInfo.size();
-        this.innerPage = this.innerTaskResult.page();
 
         this.rowCombinator = rowCombinator;
         this.inFirstIteration = new AtomicBoolean(true);
@@ -93,32 +91,20 @@ class JoinContext implements Closeable {
         return outerPageInfo;
     }
 
+    public Page fetchOuterPage(PageInfo pageInfo) throws InterruptedException, ExecutionException, NoSuchElementException {
+        outerTaskResult = outerTaskResult.fetch(pageInfo).get();
+        return outerTaskResult.page();
+    }
+
+    public Page fetchInnerPage(PageInfo pageInfo) throws InterruptedException, ExecutionException, NoSuchElementException {
+        innerTaskResult = innerTaskResult.fetch(pageInfo).get();
+        return innerTaskResult.page();
+    }
+
     @Override
     public void close() throws IOException {
         outerTaskResult.close();
         innerTaskResult.close();
-    }
-
-    public synchronized void newInnerPage(PageableTaskResult taskResult) {
-        innerTaskResult = taskResult;
-        innerPage = taskResult.page();
-        innerPageIterator = innerPage.iterator();
-    }
-
-    public synchronized void newOuterPage(PageableTaskResult taskResult) {
-        outerTaskResult = taskResult;
-        outerPage = taskResult.page();
-        outerPageIterator = outerPage.iterator();
-    }
-
-    public boolean innerIsFinished() {
-        return (innerTaskResult != null && (innerTaskResult.page().size() == 0 || innerTaskResult.page().size() < innerPageInfo.size()))
-                && (innerPageIterator != null && !innerPageIterator.hasNext());
-    }
-
-    public boolean outerIsFinished() {
-        return (outerTaskResult != null && (outerTaskResult.page().size() == 0 || outerTaskResult.page().size() < outerPageInfo.size()))
-                && (outerPageIterator != null && !outerPageIterator.hasNext());
     }
 
     public boolean advanceOuterRow() {

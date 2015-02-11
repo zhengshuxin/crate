@@ -23,14 +23,15 @@ package io.crate.operation.join.nestedloop;
 
 import com.google.common.base.Optional;
 import com.google.common.util.concurrent.FutureCallback;
-import com.google.common.util.concurrent.Futures;
 import io.crate.core.bigarray.IterableBigArray;
 import io.crate.core.bigarray.MultiNativeArrayBigArray;
+import io.crate.executor.Page;
 import io.crate.executor.PageInfo;
 import io.crate.executor.PageableTaskResult;
 import io.crate.executor.TaskResult;
 import io.crate.operation.projectors.Projector;
 
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -108,9 +109,6 @@ class PagingNestedLoopStrategy implements NestedLoopStrategy {
 
         private final Projector downstream;
 
-        private final FutureCallback<PageableTaskResult> onOuterPage;
-        private final FutureCallback<PageableTaskResult> onInnerPage;
-
         public PagingExecutor(JoinContext ctx,
                                int rowsToProduce,
                                int rowsToSkip,
@@ -123,117 +121,88 @@ class PagingNestedLoopStrategy implements NestedLoopStrategy {
             this.callback = finalCallback;
             this.nestedLoopExecutor = nestedLoopExecutor;
             this.downstream = downstream;
-            onOuterPage = new FutureCallback<PageableTaskResult>() {
-                @Override
-                public void onSuccess(PageableTaskResult result) {
-                    if (result == null) {
-                        callback.onFailure(new NullPointerException("outer relation result result is null"));
-                        return;
+        }
+
+
+        @Override
+        public void startExecution() {
+            // assume taskresults with pages are already there
+            Page outerPage = ctx.outerTaskResult.page();
+            Outer:
+            while (outerPage.size() > 0) {
+                Page innerPage = ctx.innerTaskResult.page();
+                try {
+                    while (innerPage.size() > 0) {
+
+                        ctx.outerPageIterator = outerPage.iterator();
+                        ctx.innerPageIterator = innerPage.iterator();
+
+                        // set outer row
+                        if (!ctx.advanceOuterRow()) {
+                            // outer page is empty
+                            callback.onSuccess(null);
+                        }
+
+                        boolean wantMore = joinPages();
+                        if (!wantMore) {
+                            callback.onSuccess(null);
+                            break Outer;
+                        }
+                        innerPage = ctx.fetchInnerPage(ctx.advanceInnerPageInfo());
                     }
-                    onNewOuterPage(result);
-                }
-
-                @Override
-                public void onFailure(Throwable t) {
-                    callback.onFailure(t);
-                }
-            };
-            onInnerPage = new FutureCallback<PageableTaskResult>() {
-                @Override
-                public void onSuccess(PageableTaskResult result) {
-                    if (result == null) {
-                        callback.onFailure(new NullPointerException("inner relation result result is null"));
-                        return;
-                    }
-                    onNewInnerPage(result);
-                }
-
-                @Override
-                public void onFailure(Throwable t) {
-                    callback.onFailure(t);
-                }
-            };
-        }
-
-        @Override
-        public void joinOuterPage() {
-            if (ctx.innerIsFinished()) {
-                Futures.addCallback(
-                        ctx.innerTaskResult.fetch(ctx.resetInnerPageInfo()),
-                        onInnerPage,
-                        nestedLoopExecutor
-                );
-            } else {
-                onNewInnerPage(ctx.innerTaskResult);
-            }
-        }
-
-        @Override
-        public void onNewOuterPage(PageableTaskResult taskResult) {
-            ctx.newOuterPage(taskResult);
-            if (ctx.outerIsFinished()) {
-                callback.onSuccess(null);
-            } else {
-                ctx.advanceOuterRow();
-                joinOuterPage();
-            }
-        }
-
-        @Override
-        public void onNewInnerPage(PageableTaskResult taskResult) {
-            ctx.newInnerPage(taskResult);
-
-            if (taskResult.page().size() == 0) {
-                // reached last page of inner relation
-                if (ctx.advanceOuterRow()) {
-                    // advance to next outer row
-                    // and reiterate the inner relation
-                    Futures.addCallback(
-                            ctx.innerTaskResult.fetch(ctx.resetInnerPageInfo()),
-                            onInnerPage,
-                            nestedLoopExecutor
-                    );
-                    return;
-                } else {
-                    // fetch new outer page
-                    Futures.addCallback(
-                            ctx.outerTaskResult.fetch(ctx.advanceOuterPageInfo()),
-                            onOuterPage,
-                            nestedLoopExecutor
-                    );
+                    ctx.fetchInnerPage(ctx.resetInnerPageInfo()); // reset inner iterator
+                    outerPage = ctx.fetchOuterPage(ctx.advanceOuterPageInfo());
+                } catch (InterruptedException | ExecutionException e) {
+                    callback.onFailure(e);
                     return;
                 }
             }
-            joinInnerPage();
+            callback.onSuccess(null);
         }
 
-        @Override
-        public void joinInnerPage() {
+        private boolean joinPages() {
             boolean wantMore = true;
             Object[] innerRow;
-            while (ctx.innerPageIterator.hasNext()) {
-                innerRow = ctx.innerPageIterator.next();
-                if (rowsToSkip.get() > 0) {
-                    rowsToSkip.decrementAndGet();
-                    continue;
+
+            Outer:
+            do {
+                while (ctx.innerPageIterator.hasNext()) {
+                    innerRow = ctx.innerPageIterator.next();
+                    if (rowsToSkip.get() > 0) {
+                        rowsToSkip.decrementAndGet();
+                        continue;
+                    }
+
+                    wantMore = this.downstream.setNextRow(
+                            ctx.combine(ctx.outerRow(), innerRow)
+                    );
+                    wantMore = wantMore && rowsToProduce.decrementAndGet() > 0;
+                    if (!wantMore) {
+                        break Outer;
+                    }
                 }
-                wantMore = this.downstream.setNextRow(
-                        ctx.combine(ctx.outerRow(), innerRow)
-                );
-                wantMore = wantMore && rowsToProduce.decrementAndGet() > 0;
-                if (!wantMore) {
-                    break;
+                // reset inner iterator
+                ctx.innerPageIterator = ctx.innerTaskResult.page().iterator();
+            } while (ctx.advanceOuterRow());
+            return wantMore;
+        }
+
+        @Override
+        public void carryOnExecution() {
+            boolean wantMore = joinPages();
+            if (wantMore) {
+                try {
+                    if (ctx.outerTaskResult.page().size() > 0) {
+                        ctx.fetchInnerPage(ctx.advanceInnerPageInfo());
+                    } else {
+                        ctx.fetchOuterPage(ctx.advanceOuterPageInfo());
+                    }
+                    startExecution();
+                } catch (InterruptedException | ExecutionException e) {
+                    callback.onFailure(e);
                 }
-            }
-            if (!wantMore) {
-                callback.onSuccess(null);
             } else {
-                // get the next page from the inner relation
-                Futures.addCallback(
-                        ctx.innerTaskResult.fetch(ctx.advanceInnerPageInfo()),
-                        onInnerPage,
-                        nestedLoopExecutor
-                );
+                callback.onSuccess(null);
             }
         }
     }

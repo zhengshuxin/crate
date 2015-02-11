@@ -248,7 +248,7 @@ public class NestedLoopOperation implements ProjectorUpstream {
                             );
                             joinContextFuture.set(joinContext);
 
-                            FutureCallback<Void> callback = new FutureCallback<Void>() {
+                            final FutureCallback<Void> callback = new FutureCallback<Void>() {
                                 private void close() {
                                     try {
                                         joinContext.close();
@@ -275,7 +275,14 @@ public class NestedLoopOperation implements ProjectorUpstream {
                                 // shortcut
                                 callback.onSuccess(null);
                             } else {
-                                executeAsync(joinContext, pageInfo, callback);
+                                // execute nestedloop in its own thread
+                                nestedLoopExecutorService.executor().execute(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        executeAsync(joinContext, pageInfo, callback);
+                                    }
+                                });
+
                             }
                         } catch (Throwable t) {
                             logger.error("Error during execution of CROSS JOIN", t);
@@ -339,7 +346,7 @@ public class NestedLoopOperation implements ProjectorUpstream {
      */
     private void executeAsync(final JoinContext ctx, final Optional<PageInfo> pageInfo, final FutureCallback<Void> callback) {
         NestedLoopStrategy.NestedLoopExecutor executor = strategy.executor(ctx, pageInfo, downstream, callback);
-        executor.onNewOuterPage(ctx.outerTaskResult);
+        executor.startExecution();
     }
 
 
@@ -427,7 +434,7 @@ public class NestedLoopOperation implements ProjectorUpstream {
             final FlatProjectorChain projectorChain = operation.initializeProjectors();
             final Projector downstream = projectorChain.firstProjector();
             PageInfo pageInfo = new PageInfo(from, size);
-            NestedLoopStrategy.NestedLoopExecutor executor = operation.strategy.executor(joinContext, Optional.of(pageInfo), downstream, new FutureCallback<Void>() {
+            final NestedLoopStrategy.NestedLoopExecutor executor = operation.strategy.executor(joinContext, Optional.of(pageInfo), downstream, new FutureCallback<Void>() {
 
                 @Override
                 public void onSuccess(@Nullable Void result) {
@@ -462,7 +469,13 @@ public class NestedLoopOperation implements ProjectorUpstream {
                 }
             });
             // directly carry on where we left
-            executor.joinInnerPage();
+            operation.nestedLoopExecutorService.executor().execute(new Runnable() {
+                @Override
+                public void run() {
+                    executor.carryOnExecution();
+                }
+            });
+
         }
 
         @Override

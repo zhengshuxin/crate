@@ -24,7 +24,6 @@ package io.crate.operation.join.nestedloop;
 import com.google.common.base.Optional;
 import com.google.common.util.concurrent.FutureCallback;
 import io.crate.executor.PageInfo;
-import io.crate.executor.PageableTaskResult;
 import io.crate.executor.TaskResult;
 import io.crate.operation.projectors.Projector;
 
@@ -35,11 +34,9 @@ import io.crate.operation.projectors.Projector;
 interface NestedLoopStrategy {
 
     public static interface NestedLoopExecutor {
-        public void joinOuterPage();
-        public void joinInnerPage();
 
-        public void onNewOuterPage(PageableTaskResult taskResult);
-        public void onNewInnerPage(PageableTaskResult taskResult);
+        public void startExecution();
+        public void carryOnExecution();
 
     }
 

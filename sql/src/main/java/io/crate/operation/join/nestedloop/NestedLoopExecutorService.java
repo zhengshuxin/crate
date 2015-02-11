@@ -53,7 +53,7 @@ public class NestedLoopExecutorService extends AbstractLifecycleComponent<Nested
     @Override
     protected void doStart() throws ElasticsearchException {
         nestedLoopExecutor = new ThreadPoolExecutor(
-                1,
+                10,
                 maxThreads,
                 60L,
                 TimeUnit.SECONDS,
