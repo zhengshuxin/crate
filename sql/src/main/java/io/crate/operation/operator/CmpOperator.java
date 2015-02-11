@@ -1,10 +1,14 @@
 package io.crate.operation.operator;
 
+import io.crate.core.collections.MapComparator;
 import io.crate.metadata.FunctionInfo;
 import io.crate.operation.Input;
-import io.crate.planner.symbol.*;
-import io.crate.core.collections.MapComparator;
+import io.crate.planner.symbol.Function;
+import io.crate.planner.symbol.Literal;
+import io.crate.planner.symbol.Symbol;
+import io.crate.planner.symbol.SymbolFormatter;
 
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
@@ -48,10 +52,19 @@ public abstract class CmpOperator extends Operator<Object> {
         if (left.symbolType().isValueSymbol() && right.symbolType().isValueSymbol()) {
             // must be true due to the function registration (argument DataType signature)
 
-            if (compare(((Literal) left).compareTo((Literal)right))) {
-                return Literal.newLiteral(true);
+            boolean equal = false;
+            try {
+                equal = compare(((Literal) left).compareTo((Literal) right));
+            } catch (ClassCastException e){
+                throw new IllegalArgumentException(
+                        String.format(Locale.ENGLISH, "unable to cast %s to type '%s'",
+                                SymbolFormatter.format(right),
+                                left.valueType().getName()));
+            }
+            if (equal) {
+                return Literal.BOOLEAN_TRUE;
             } else {
-                return Literal.newLiteral(false);
+                return Literal.BOOLEAN_FALSE;
             }
         }
 

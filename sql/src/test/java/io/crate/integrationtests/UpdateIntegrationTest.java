@@ -23,6 +23,7 @@ package io.crate.integrationtests;
 
 import io.crate.action.sql.SQLActionException;
 import io.crate.action.sql.SQLBulkResponse;
+import io.crate.exceptions.UnsupportedFeatureException;
 import io.crate.test.integration.CrateIntegrationTest;
 import org.junit.Rule;
 import org.junit.Test;
@@ -543,6 +544,25 @@ public class UpdateIntegrationTest extends SQLTransportIntegrationTest {
         assertThat((Long) response.rows()[0][0], is(3L));
         assertThat((Integer) response.rows()[0][1], is(4));
     }
+
+    @Test(expected = UnsupportedFeatureException.class)
+    public void testUpdateVersionOrOperator() throws Exception {
+        execute("create table test (id int primary key, c int) with (number_of_replicas=0, refresh_interval=0)");
+        ensureGreen();
+        execute("insert into test (id, c) values (1, 1)");
+        execute("refresh table test");
+        execute("update test set c = 4 where _version = 2 or _version=1"); // this one works
+    }
+
+    @Test(expected = UnsupportedFeatureException.class)
+    public void testUpdateVersionInOperator() throws Exception {
+        execute("create table test (id int primary key, c int) with (number_of_replicas=0, refresh_interval=0)");
+        ensureGreen();
+        execute("insert into test (id, c) values (1, 1)");
+        execute("refresh table test");
+        execute("update test set c = 4 where _version = 2 or _version=1"); // this one works
+    }
+
 
     @Test
     public void testUpdateRetryOnVersionConflict() throws Exception {

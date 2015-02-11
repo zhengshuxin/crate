@@ -52,6 +52,7 @@ import io.crate.planner.symbol.*;
 import io.crate.planner.symbol.Literal;
 import io.crate.sql.ExpressionFormatter;
 import io.crate.sql.tree.*;
+import io.crate.sql.tree.InPredicate;
 import io.crate.sql.tree.MatchPredicate;
 import io.crate.types.*;
 import org.elasticsearch.ElasticsearchParseException;
@@ -430,7 +431,10 @@ public class ExpressionAnalyzer {
 
         @Override
         protected Symbol visitInPredicate(InPredicate node, ExpressionAnalysisContext context) {
+
             Symbol left = process(node.getValue(), context);
+
+
             DataType leftType = left.valueType();
             if (leftType.equals(DataTypes.UNDEFINED)) {
                 // dynamic or null values cannot be queried, in scalar use-cases (system tables)
@@ -438,26 +442,42 @@ public class ExpressionAnalyzer {
                 return Literal.NULL;
             }
 
-            Set<Object> rightValues = new HashSet<>();
+            InListExpression listExpression = ((InListExpression) node.getValueList());
+
+            if (listExpression.getValues().isEmpty()) {
+                // TODO:check if this is possible
+                return Literal.BOOLEAN_FALSE;
+            }
+
+            Set<Function> comparisons = new HashSet<>(listExpression.getValues().size());
             for (Expression expression : ((InListExpression) node.getValueList()).getValues()) {
                 Symbol right = expression.accept(this, context);
-                Literal rightLiteral;
-                try {
-                    rightLiteral = Literal.convert(right, leftType);
-                    rightValues.add(rightLiteral.value());
-                } catch (IllegalArgumentException | ClassCastException e) {
-                    throw new IllegalArgumentException(
-                            String.format(Locale.ENGLISH, "invalid IN LIST value %s. expected type '%s'",
-                                    SymbolFormatter.format(right),
-                                    leftType.getName()));
+                if (right.valueType() != leftType){
+                    if (right.valueType().isConvertableTo(leftType)){
+                        right = context.allocateFunction(CastFunctionResolver.functionInfo(right.valueType(), leftType),
+                                Arrays.asList(right));
+                    } else {
+                        throw new IllegalArgumentException(
+                                String.format(Locale.ENGLISH, "invalid IN LIST value %s. expected type '%s'",
+                                        SymbolFormatter.format(right),
+                                        leftType.getName()));
+                    }
                 }
+                FunctionIdent ident = new FunctionIdent(EqOperator.NAME, Arrays.asList(leftType, right.valueType()));
+                comparisons.add(context.allocateFunction(
+                        new FunctionInfo(ident, DataTypes.BOOLEAN),
+                        Arrays.asList(left, right)));
             }
-            SetType setType = new SetType(leftType);
-            FunctionIdent functionIdent = new FunctionIdent(InOperator.NAME, Arrays.asList(leftType, setType));
-            FunctionInfo functionInfo = getFunctionInfo(functionIdent);
-            return context.allocateFunction(
-                    functionInfo,
-                    Arrays.asList(left, newLiteral(setType, rightValues)));
+            if (comparisons.size()==1) {
+                return comparisons.iterator().next();
+            } else {
+                Iterator<Function> iter = comparisons.iterator();
+                Symbol result = iter.next();
+                while(iter.hasNext()) {
+                    result = context.allocateFunction(OrOperator.INFO, Arrays.asList(result, iter.next()));
+                }
+                return result;
+            }
         }
 
         @Override

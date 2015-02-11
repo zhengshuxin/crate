@@ -495,12 +495,7 @@ public class SelectStatementAnalyzerTest extends BaseAnalyzerTest {
         SelectAnalyzedStatement analysis = analyze("select load from sys.nodes where load['1'] in (1.0, 2.0, 4.0, 8.0, 16.0)");
 
         Function whereClause = (Function) analysis.relation().querySpec().where().query();
-        assertEquals(InOperator.NAME, whereClause.info().ident().name());
-        assertThat(whereClause.arguments().get(0), isReference("load['1']"));
-        assertThat(whereClause.arguments().get(1), IsInstanceOf.instanceOf(Literal.class));
-
-        Literal setLiteral = (Literal) whereClause.arguments().get(1);
-        assertEquals(new SetType(DataTypes.DOUBLE), setLiteral.valueType());
+        assertEquals(OrOperator.NAME, whereClause.info().ident().name());
     }
 
     @Test

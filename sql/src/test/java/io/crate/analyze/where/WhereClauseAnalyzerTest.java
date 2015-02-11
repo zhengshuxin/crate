@@ -152,14 +152,19 @@ public class WhereClauseAnalyzerTest extends AbstractRandomizedTest {
                 SqlParser.createStatement(stmt), new Object[0], new Object[0][]).analyzedStatement();
     }
 
-    private WhereClause analyzeSelectWhere(String stmt) {
+    private WhereClause analyzeSelect(String stmt, Object... args){
         SelectAnalyzedStatement statement = (SelectAnalyzedStatement) analyzer.analyze(
-                SqlParser.createStatement(stmt), new Object[0], new Object[0][]).analyzedStatement();
+                SqlParser.createStatement(stmt), args, new Object[0][]).analyzedStatement();
         QueriedTable sourceRelation = (QueriedTable) statement.relation();
         TableRelation tableRelation = sourceRelation.tableRelation();
         TableInfo tableInfo = tableRelation.tableInfo();
         WhereClauseAnalyzer whereClauseAnalyzer = new WhereClauseAnalyzer(ctxMetaData, tableRelation);
         return whereClauseAnalyzer.analyze(statement.relation().querySpec().where());
+
+    }
+
+    private WhereClause analyzeSelectWhere(String stmt) {
+        return analyzeSelect(stmt);
     }
 
     @Test
@@ -200,6 +205,22 @@ public class WhereClauseAnalyzerTest extends AbstractRandomizedTest {
         WhereClause whereClause = whereClauseAnalyzer.analyze(updateAnalyzedStatement.nestedStatements().get(0).whereClause());
         assertThat(whereClause.noMatch(), is(true));
     }
+
+
+    @Test
+    public void testUpdateWhereVersionOrOperator() throws Exception {
+//        expectedException.expect(UnsupportedOperationException.class);
+//        expectedException.expectMessage(
+//                "Filtering \"_version\" in WHERE clause only works using the \"=\" operator, checking for a numeric value");
+        UpdateAnalyzedStatement updateAnalyzedStatement = analyzeUpdate("update users set awesome =  true where _version = 1 or _version = 2");
+        TableRelation tableRelation = (TableRelation) updateAnalyzedStatement.sourceRelation();
+        WhereClauseAnalyzer whereClauseAnalyzer = new WhereClauseAnalyzer(ctxMetaData, tableRelation);
+        assertThat(updateAnalyzedStatement.nestedStatements().get(0).whereClause().noMatch(), is(false));
+
+        WhereClause whereClause = whereClauseAnalyzer.analyze(updateAnalyzedStatement.nestedStatements().get(0).whereClause());
+        assertThat(whereClause.noMatch(), is(true));
+    }
+
 
     @Test
     public void testUpdateWherePartitionedByColumn() throws Exception {
@@ -265,11 +286,10 @@ public class WhereClauseAnalyzerTest extends AbstractRandomizedTest {
         assertThat(whereClause.clusteredBy().get(), containsInAnyOrder(
                 isLiteral(1L), isLiteral(2L)));
 
-
-        // TODO: optimize this case: routing should be 3,4,5
         whereClause = analyzeSelectWhere("select name from users_clustered_by_only where id in (3,4,5)");
         assertFalse(whereClause.primaryKeys().isPresent());
-        assertFalse(whereClause.clusteredBy().isPresent());
+        assertThat(whereClause.clusteredBy().get(), containsInAnyOrder(
+                isLiteral(3, DataTypes.LONG), isLiteral(4, DataTypes.LONG), isLiteral(5, DataTypes.LONG)));
 
 
         // TODO: optimize this case: there are two routing values here, which are currently not set
@@ -413,13 +433,34 @@ public class WhereClauseAnalyzerTest extends AbstractRandomizedTest {
     }
 
     @Test
+    public void test1ColPrimaryKeyNotSetLiteral() throws Exception {
+        WhereClause whereClause = analyzeSelectWhere("select name from sys.nodes where id not in ('jalla', 'kelle')");
+        assertFalse(whereClause.noMatch());
+        assertFalse(whereClause.primaryKeys().isPresent());
+        assertFalse(whereClause.clusteredBy().isPresent());
+    }
+
+    @Test
     public void test3ColPrimaryKeySetLiteral() throws Exception {
-        WhereClause whereClause = analyzeSelectWhere("select id from sys.shards where id=1 and schema_name='doc' and table_name in ('jalla', 'kelle') and partition_ident=''");
+        WhereClause whereClause = analyzeSelectWhere("select id from sys.shards where id=1 and schema_name='doc' and" +
+                " table_name in ('jalla', 'kelle') and partition_ident=''");
         assertEquals(2, whereClause.primaryKeys().get().size());
         // base64 encoded versions of Streamable of ["doc","jalla","1"] and ["doc","kelle","1"]
         assertThat(whereClause.primaryKeys().get(), containsInAnyOrder(
                 hasToString("BANkb2MFamFsbGEBMQA="), hasToString("BANkb2MFa2VsbGUBMQA=")));
     }
+
+    @Test
+    public void test3ColPrimaryKeyWithOr() throws Exception {
+        WhereClause whereClause = analyzeSelectWhere("select id from sys.shards where id=1 and schema_name='doc' and " +
+                "(table_name = 'jalla' or table_name='kelle') and partition_ident='asdf'");
+        assertEquals(2, whereClause.primaryKeys().get().size());
+        // base64 encoded versions of Streamable of ["doc","jalla","1"] and ["doc","kelle","1"]
+        assertThat(whereClause.primaryKeys().get(), containsInAnyOrder(
+                hasToString("BANkb2MFamFsbGEBMQA="), hasToString("BANkb2MFa2VsbGUBMQA=")));
+    }
+
+
 
     @Test
     public void testSelectFromPartitionedTable() throws Exception {

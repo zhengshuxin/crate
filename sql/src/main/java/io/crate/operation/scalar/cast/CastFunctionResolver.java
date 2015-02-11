@@ -25,9 +25,13 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import io.crate.metadata.FunctionIdent;
 import io.crate.metadata.FunctionInfo;
+import io.crate.planner.symbol.Function;
+import io.crate.planner.symbol.Symbol;
 import io.crate.types.DataType;
 import io.crate.types.DataTypes;
+import org.elasticsearch.common.Nullable;
 
+import java.util.Arrays;
 import java.util.Locale;
 
 public class CastFunctionResolver {
@@ -65,5 +69,17 @@ public class CastFunctionResolver {
                             returnType.getName()));
         }
         return new FunctionInfo(new FunctionIdent(functionName, ImmutableList.of(dataType)), returnType);
+    }
+
+    @Nullable
+    public static Symbol castSymbol(Symbol symbol, DataType targetType) {
+        if (symbol.valueType() == targetType) {
+            return symbol;
+        } else if (symbol.valueType().isConvertableTo(targetType)) {
+            return new Function(
+                    functionInfo(symbol.valueType(), targetType),
+                    Arrays.asList(symbol));
+        }
+        return null;
     }
 }
