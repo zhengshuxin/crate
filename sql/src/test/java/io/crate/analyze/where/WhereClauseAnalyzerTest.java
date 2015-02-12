@@ -30,7 +30,6 @@ import io.crate.metadata.*;
 import io.crate.metadata.sys.MetaDataSysModule;
 import io.crate.metadata.table.ColumnPolicy;
 import io.crate.metadata.table.SchemaInfo;
-import io.crate.metadata.table.TableInfo;
 import io.crate.metadata.table.TestingTableInfo;
 import io.crate.operation.operator.OperatorModule;
 import io.crate.operation.predicate.PredicateModule;
@@ -156,10 +155,11 @@ public class WhereClauseAnalyzerTest extends AbstractRandomizedTest {
         SelectAnalyzedStatement statement = (SelectAnalyzedStatement) analyzer.analyze(
                 SqlParser.createStatement(stmt), args, new Object[0][]).analyzedStatement();
         QueriedTable sourceRelation = (QueriedTable) statement.relation();
-        TableRelation tableRelation = sourceRelation.tableRelation();
-        TableInfo tableInfo = tableRelation.tableInfo();
-        WhereClauseAnalyzer whereClauseAnalyzer = new WhereClauseAnalyzer(ctxMetaData, tableRelation);
-        return whereClauseAnalyzer.analyze(statement.relation().querySpec().where());
+        return sourceRelation.querySpec().where();
+//        TableRelation tableRelation = sourceRelation.tableRelation();
+//        TableInfo tableInfo = tableRelation.tableInfo();
+//        WhereClauseAnalyzer whereClauseAnalyzer = new WhereClauseAnalyzer(ctxMetaData, tableRelation);
+//        return whereClauseAnalyzer.analyze(statement.relation().querySpec().where());
 
     }
 
@@ -308,10 +308,10 @@ public class WhereClauseAnalyzerTest extends AbstractRandomizedTest {
         assertThat(whereClause.primaryKeys().get(), contains(hasToString("AgExB0RvdWdsYXM=")));
         assertThat(whereClause.clusteredBy().get(), contains(isLiteral(1L)));
 
-        // TODO: optimize this case, since the routing values are 1,2
         whereClause = analyzeSelectWhere("select name from users_multi_pk where id=1 or id=2 and name='Douglas'");
         assertFalse(whereClause.primaryKeys().isPresent());
-        assertFalse(whereClause.clusteredBy().isPresent());
+        assertThat(whereClause.clusteredBy().get(), containsInAnyOrder(
+                isLiteral("1", DataTypes.LONG), isLiteral("2", DataTypes.LONG)));
 
         whereClause = analyzeSelectWhere("select name from users_multi_pk where id=1 and name='Douglas' or name='Arthur'");
         assertFalse(whereClause.primaryKeys().isPresent());
@@ -456,6 +456,13 @@ public class WhereClauseAnalyzerTest extends AbstractRandomizedTest {
                 "(table_name = 'jalla' or table_name='kelle') and partition_ident='asdf'");
         assertEquals(2, whereClause.primaryKeys().get().size());
         // base64 encoded versions of Streamable of ["doc","jalla","1"] and ["doc","kelle","1"]
+        for (Id id : whereClause.primaryKeys().get()) {
+            for (BytesRef ref : id.values()) {
+                System.out.println(ref.utf8ToString());
+            }
+            System.out.println("------------------");
+        }
+
         assertThat(whereClause.primaryKeys().get(), containsInAnyOrder(
                 hasToString("BANkb2MFamFsbGEBMQA="), hasToString("BANkb2MFa2VsbGUBMQA=")));
     }

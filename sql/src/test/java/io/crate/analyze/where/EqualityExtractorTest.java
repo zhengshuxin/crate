@@ -65,15 +65,15 @@ public class EqualityExtractorTest extends BaseAnalyzerTest {
     }
 
     private List<List<Symbol>> analyzeMatchesX(Symbol query) {
-        return analyzeMatches(query, ImmutableList.of(Ref("x")));
+        return analyzeMatches(query, ImmutableList.of(Ref("x").ident()));
     }
 
 
     private List<List<Symbol>> analyzeMatchesXY(Symbol query) {
-        return analyzeMatches(query, ImmutableList.of(Ref("x"), Ref("y")));
+        return analyzeMatches(query, ImmutableList.of(Ref("x").ident(), Ref("y").ident()));
     }
 
-    private List<List<Symbol>> analyzeMatches(Symbol query, List<Reference> cols) {
+    private List<List<Symbol>> analyzeMatches(Symbol query, List<ReferenceIdent> cols) {
         EvaluatingNormalizer normalizer = new EvaluatingNormalizer(
                 injector.getInstance(Functions.class),
                 RowGranularity.CLUSTER,

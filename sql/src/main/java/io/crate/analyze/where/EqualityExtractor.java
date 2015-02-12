@@ -52,10 +52,10 @@ public class EqualityExtractor {
         this.normalizer = normalizer;
     }
 
-    public List<List<Symbol>> extract(List<Reference> references, Symbol symbol){
+    public List<List<Symbol>> extract(List<ReferenceIdent> columns, Symbol symbol){
         EqualityExtractor.ProxyInjectingVisitor piv = new EqualityExtractor.ProxyInjectingVisitor();
         EqualityExtractor.ProxyInjectingVisitor.Context context =
-                new EqualityExtractor.ProxyInjectingVisitor.Context(references);
+                new EqualityExtractor.ProxyInjectingVisitor.Context(columns);
         Symbol proxiedTree = piv.process(symbol, context);
 
         //proxiedTree = normalizer.normalize(proxiedTree);
@@ -188,10 +188,10 @@ public class EqualityExtractor {
             LinkedHashMap<ReferenceIdent, Comparison> comparisons;
             public boolean proxyBelow;
 
-            public Context(Collection<Reference> references) {
+            public Context(Collection<ReferenceIdent> references) {
                 comparisons = new LinkedHashMap<>(references.size());
-                for (Reference reference : references) {
-                    comparisons.put(reference.info().ident(), new Comparison());
+                for (ReferenceIdent reference : references) {
+                    comparisons.put(reference, new Comparison());
                 }
             }
 

@@ -24,9 +24,20 @@ package io.crate.planner.symbol;
 import org.apache.lucene.util.BytesRef;
 import org.elasticsearch.common.lucene.BytesRefs;
 
+import javax.annotation.Nullable;
+
 public class BytesRefValueSymbolVisitor extends SymbolVisitor<Void, BytesRef> {
 
     public static final BytesRefValueSymbolVisitor INSTANCE = new BytesRefValueSymbolVisitor();
+
+    public static final com.google.common.base.Function<Symbol, BytesRef> PROCESS_FUNCTION =
+            new com.google.common.base.Function<Symbol, BytesRef>() {
+                @Nullable
+                @Override
+                public BytesRef apply(Symbol input) {
+                    return INSTANCE.process(input, null);
+                }
+            };
 
     private BytesRefValueSymbolVisitor() {
     }
