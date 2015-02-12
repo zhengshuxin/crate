@@ -59,21 +59,22 @@ class OneShotNestedLoopStrategy implements NestedLoopStrategy {
         public void startExecution() {
             // assume taskresults with pages are already there
             Page outerPage = ctx.outerTaskResult.page();
-            Outer:
+            ctx.outerPageIterator = outerPage.iterator();
+
             while (outerPage.size() > 0) {
                 Page innerPage = ctx.innerTaskResult.page();
                 try {
+
+                    // set outer row
+                    if (!ctx.advanceOuterRow()) {
+                        // outer page is empty
+                        callback.onSuccess(null);
+                    }
+
                     while (innerPage.size() > 0) {
-                        ctx.outerPageIterator = outerPage.iterator();
                         ctx.innerPageIterator = innerPage.iterator();
 
-                        // set outer row
-                        if (!ctx.advanceOuterRow()) {
-                            // outer page is empty
-                            callback.onSuccess(null);
-                        }
-
-                        boolean wantMore = joinPages();
+                        boolean wantMore = joinInnerPage();
                         if (!wantMore) {
                             callback.onSuccess(null);
                             return;
@@ -81,7 +82,10 @@ class OneShotNestedLoopStrategy implements NestedLoopStrategy {
                         innerPage = ctx.fetchInnerPage(ctx.advanceInnerPageInfo());
                     }
                     ctx.fetchInnerPage(ctx.resetInnerPageInfo()); // reset inner iterator
-                    outerPage = ctx.fetchOuterPage(ctx.advanceOuterPageInfo());
+                    if (!ctx.outerPageIterator.hasNext()) {
+                        outerPage = ctx.fetchOuterPage(ctx.advanceOuterPageInfo());
+                        ctx.outerPageIterator = outerPage.iterator();
+                    }
                 } catch (InterruptedException | ExecutionException e) {
                     callback.onFailure(e);
                     return;
@@ -90,31 +94,28 @@ class OneShotNestedLoopStrategy implements NestedLoopStrategy {
             callback.onSuccess(null);
         }
 
-        private boolean joinPages() {
+        private boolean joinInnerPage() {
             boolean wantMore = true;
             Object[] innerRow;
 
-            Outer:
-            do {
-                while (ctx.innerPageIterator.hasNext()) {
-                    innerRow = ctx.innerPageIterator.next();
-                    wantMore = this.downstream.setNextRow(
-                            ctx.combine(ctx.outerRow(), innerRow)
-                    );
-                    if (!wantMore) {
-                        break Outer;
-                    }
+            while (ctx.innerPageIterator.hasNext()) {
+                innerRow = ctx.innerPageIterator.next();
+                wantMore = this.downstream.setNextRow(
+                        ctx.combine(ctx.outerRow(), innerRow)
+                );
+                if (!wantMore) {
+                    break;
                 }
-                // reset inner iterator
-                ctx.innerPageIterator = ctx.innerTaskResult.page().iterator();
-            } while (ctx.advanceOuterRow());
+            }
+            // reset inner iterator
+            //ctx.innerPageIterator = ctx.innerTaskResult.page().iterator();
             return wantMore;
         }
 
         @Override
         public void carryOnExecution() {
             // try to carry on where we left of
-            boolean wantMore = joinPages();
+            boolean wantMore = joinInnerPage();
             if (wantMore) {
                 startExecution();
             } else {
