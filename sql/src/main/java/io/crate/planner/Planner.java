@@ -25,10 +25,10 @@ import com.carrotsearch.hppc.procedures.ObjectProcedure;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import io.crate.analyze.*;
 import io.crate.analyze.relations.TableRelation;
+import io.crate.analyze.where.DocKeys;
 import io.crate.exceptions.UnhandledServerException;
 import io.crate.metadata.*;
 import io.crate.metadata.doc.DocSysColumns;
@@ -392,13 +392,12 @@ public class Planner extends AnalyzedStatementVisitor<Planner.Context, Plan> {
     }
 
     private void createESDeleteNode(TableInfo tableInfo, WhereClause whereClause, IterablePlan plan) {
-        assert whereClause.primaryKeys().get().size() == 1;
-        Id pk = Iterables.get(whereClause.primaryKeys().get(), 0);
+        DocKeys.DocKey docKey = whereClause.docKeys().get().getOnlyKey();
         plan.add(new ESDeleteNode(
                 indices(tableInfo, whereClause)[0],
-                pk.stringValue(),
-                pk.routingValue(),
-                whereClause.version()));
+                docKey.id(),
+                docKey.routing(),
+                docKey.version()));
     }
 
     private void createESDeleteByQueryNode(TableInfo tableInfo, WhereClause whereClause, IterablePlan plan) {

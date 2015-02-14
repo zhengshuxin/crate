@@ -26,7 +26,7 @@ import com.google.common.collect.Sets;
 import io.crate.analyze.EvaluatingNormalizer;
 import io.crate.metadata.FunctionIdent;
 import io.crate.metadata.FunctionInfo;
-import io.crate.metadata.ReferenceIdent;
+import io.crate.metadata.ColumnIdent;
 import io.crate.operation.operator.EqOperator;
 import io.crate.planner.symbol.*;
 import io.crate.types.DataType;
@@ -52,11 +52,23 @@ public class EqualityExtractor {
         this.normalizer = normalizer;
     }
 
-    public List<List<Symbol>> extract(List<ReferenceIdent> columns, Symbol symbol){
+    public List<List<Symbol>> extractParentMatches(List<ColumnIdent> columns, Symbol symbol){
+        return extractMatches(columns, symbol, false);
+    }
+    public List<List<Symbol>> extractExactMatches(List<ColumnIdent> columns, Symbol symbol) {
+        return extractMatches(columns, symbol, true);
+    }
+
+    private List<List<Symbol>> extractMatches(Collection<ColumnIdent> columns, Symbol symbol, boolean exact){
         EqualityExtractor.ProxyInjectingVisitor piv = new EqualityExtractor.ProxyInjectingVisitor();
         EqualityExtractor.ProxyInjectingVisitor.Context context =
-                new EqualityExtractor.ProxyInjectingVisitor.Context(columns);
+                new EqualityExtractor.ProxyInjectingVisitor.Context(columns, exact);
         Symbol proxiedTree = piv.process(symbol, context);
+
+        // bail out if we have any unknown part in the tree
+        if (context.exact && context.seenUnknown){
+            return null;
+        }
 
         //proxiedTree = normalizer.normalize(proxiedTree);
         List<Set<EqProxy>> comparisons = context.comparisonSet();
@@ -185,12 +197,15 @@ public class EqualityExtractor {
         }
 
         static class Context {
-            LinkedHashMap<ReferenceIdent, Comparison> comparisons;
+            LinkedHashMap<ColumnIdent, Comparison> comparisons;
             public boolean proxyBelow;
+            public boolean seenUnknown = false;
+            private final boolean exact;
 
-            public Context(Collection<ReferenceIdent> references) {
+            public Context(Collection<ColumnIdent> references, boolean exact) {
+                this.exact = exact;
                 comparisons = new LinkedHashMap<>(references.size());
-                for (ReferenceIdent reference : references) {
+                for (ColumnIdent reference : references) {
                     comparisons.put(reference, new Comparison());
                 }
             }
@@ -201,7 +216,6 @@ public class EqualityExtractor {
                     // TODO: probably create a view instead of a seperate set
                     comps.add(new HashSet(comparison.proxies.values()));
                 }
-                //Sets.cartesianProduct(comps);
                 return comps;
             }
 
@@ -214,14 +228,24 @@ public class EqualityExtractor {
 
         @Override
         public Symbol visitMatchPredicate(MatchPredicate matchPredicate, Context context) {
+            context.seenUnknown = true;
             return Literal.BOOLEAN_TRUE;
+        }
+
+        @Override
+        public Symbol visitReference(Reference symbol, Context context) {
+            if (!context.comparisons.containsKey(symbol.ident().columnIdent())){
+                context.seenUnknown = true;
+            }
+            return super.visitReference(symbol, context);
         }
 
         public Symbol visitFunction(Function function, Context context) {
 
             if (function.info().ident().name().equals(EqOperator.NAME)) {
                 if (function.arguments().get(0) instanceof Reference) {
-                    Comparison comparison = context.comparisons.get(((Reference) function.arguments().get(0)).ident());
+                    Comparison comparison = context.comparisons.get(
+                            ((Reference) function.arguments().get(0)).ident().columnIdent());
                     if (comparison != null) {
                         context.proxyBelow = true;
                         EqProxy x = comparison.add(function);

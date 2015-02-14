@@ -64,23 +64,32 @@ public class EqualityExtractorTest extends BaseAnalyzerTest {
         return modules;
     }
 
-    private List<List<Symbol>> analyzeMatchesX(Symbol query) {
-        return analyzeMatches(query, ImmutableList.of(Ref("x").ident()));
+    private List<List<Symbol>> analyzeParentX(Symbol query) {
+        return getExtractor().extractParentMatches(ImmutableList.of(Ref("x").ident().columnIdent()), query);
+
+    }
+
+    private List<List<Symbol>> analyzeExactX(Symbol query) {
+        return analyzeExact(query, ImmutableList.of(Ref("x").ident().columnIdent()));
     }
 
 
-    private List<List<Symbol>> analyzeMatchesXY(Symbol query) {
-        return analyzeMatches(query, ImmutableList.of(Ref("x").ident(), Ref("y").ident()));
+    private List<List<Symbol>> analyzeExactXY(Symbol query) {
+        return analyzeExact(query, ImmutableList.of(Ref("x").ident().columnIdent(), Ref("y").ident().columnIdent()));
     }
 
-    private List<List<Symbol>> analyzeMatches(Symbol query, List<ReferenceIdent> cols) {
+    private List<List<Symbol>> analyzeExact(Symbol query, List<ColumnIdent> cols) {
+        EqualityExtractor ee = getExtractor();
+        return ee.extractExactMatches(cols, query);
+    }
+
+    private EqualityExtractor getExtractor() {
         EvaluatingNormalizer normalizer = new EvaluatingNormalizer(
                 injector.getInstance(Functions.class),
                 RowGranularity.CLUSTER,
                 injector.getInstance(ReferenceResolver.class));
 
-        EqualityExtractor ee = new EqualityExtractor(normalizer);
-        return ee.extract(cols, query);
+        return new EqualityExtractor(normalizer);
     }
 
 
@@ -123,7 +132,7 @@ public class EqualityExtractorTest extends BaseAnalyzerTest {
                 Eq(Ref("y"), Literal.newLiteral(2))
         );
 
-        List<List<Symbol>> matches = analyzeMatchesXY(query);
+        List<List<Symbol>> matches = analyzeExactXY(query);
         assertNull(matches);
     }
 
@@ -134,7 +143,7 @@ public class EqualityExtractorTest extends BaseAnalyzerTest {
                 Eq("x", 1),
                 Or(Or(Eq("y", 2), Eq("y", 3)), Eq("y", 4))
         );
-        List<List<Symbol>> matches = analyzeMatchesXY(query);
+        List<List<Symbol>> matches = analyzeExactXY(query);
         assertThat(matches.size(), is(3));
 
         for (List<Symbol> match : matches) {
@@ -148,7 +157,7 @@ public class EqualityExtractorTest extends BaseAnalyzerTest {
                 And(Eq("x", 1), Eq("y", 2)),
                 And(Eq("x", 3), Eq("y", 4))
         );
-        List<List<Symbol>> matches = analyzeMatchesXY(query);
+        List<List<Symbol>> matches = analyzeExactXY(query);
         assertThat(matches.size(), is(2));
 
         for (List<Symbol> match : matches) {
@@ -162,7 +171,7 @@ public class EqualityExtractorTest extends BaseAnalyzerTest {
                 And(Eq("x", 1), Eq("y", 2)),
                 And(Eq("x", 1), Eq("y", 4))
         );
-        List<List<Symbol>> matches = analyzeMatchesXY(query);
+        List<List<Symbol>> matches = analyzeExactXY(query);
         assertThat(matches.size(), is(2));
         for (List<Symbol> match : matches) {
             System.out.println(match);
@@ -176,7 +185,7 @@ public class EqualityExtractorTest extends BaseAnalyzerTest {
                 Eq("x", 1),
                 Eq("y", 2)
         );
-        List<List<Symbol>> matches = analyzeMatchesX(query);
+        List<List<Symbol>> matches = analyzeParentX(query);
         assertThat(matches.size(), is(1));
 
         for (List<Symbol> match : matches) {
@@ -187,7 +196,7 @@ public class EqualityExtractorTest extends BaseAnalyzerTest {
     @Test
     public void testRoutingForeignOnly() throws Exception {
         Symbol query = Eq("y", 2);
-        List<List<Symbol>> matches = analyzeMatchesX(query);
+        List<List<Symbol>> matches = analyzeParentX(query);
         assertNull(matches);
     }
 
@@ -197,16 +206,28 @@ public class EqualityExtractorTest extends BaseAnalyzerTest {
                 Eq("x", 1),
                 Eq("x", 2)
         );
-        List<List<Symbol>> matches = analyzeMatchesX(query);
+        List<List<Symbol>> matches = analyzeParentX(query);
         assertThat(matches.size(), is(2));
     }
+
+    @Test
+    public void testPKAnd() throws Exception {
+        Symbol query = And(
+                Eq("x", 1),
+                Eq("x", 2)
+        );
+        List<List<Symbol>> matches = analyzeExactX(query);
+        assertNull(matches);
+    }
+
+
 
     @Test
     public void testRoutingOrNested() throws Exception {
         Symbol query = Or(Eq("x", 1),
                 Or(Or(Eq("x", 2), Eq("x", 3)), Eq("x", 4))
         );
-        List<List<Symbol>> matches = analyzeMatchesX(query);
+        List<List<Symbol>> matches = analyzeParentX(query);
         assertThat(matches.size(), is(4));
     }
 
@@ -216,9 +237,22 @@ public class EqualityExtractorTest extends BaseAnalyzerTest {
                 Eq("x", 1),
                 Eq("a", 2)
         );
-        List<List<Symbol>> matches = analyzeMatchesX(query);
+        List<List<Symbol>> matches = analyzeParentX(query);
         assertNull(matches);
     }
+
+    @Test
+    public void testPK1AndForeign() throws Exception {
+        // x=1 or (x=2 and a=2)
+        Symbol query = Or(
+                Eq("x", 1),
+                And(Eq("x", 2),
+                        Eq("a", 2))
+        );
+        List<List<Symbol>> matches = analyzeExactX(query);
+        assertNull(matches);
+    }
+
 
     @Test
     public void testPK2_NestedOrWithDuplicates() throws Exception {
@@ -226,7 +260,7 @@ public class EqualityExtractorTest extends BaseAnalyzerTest {
                 Eq("x", 1),
                 Or(Or(Eq("y", 2), Eq("y", 2)), Eq("y", 4))
         );
-        List<List<Symbol>> matches = analyzeMatchesXY(query);
+        List<List<Symbol>> matches = analyzeExactXY(query);
         assertThat(matches.size(), is(2));
 
         for (List<Symbol> match : matches) {
@@ -244,20 +278,39 @@ public class EqualityExtractorTest extends BaseAnalyzerTest {
                         Eq(Ref("z"), Literal.newLiteral(3))
                 ));
 
-        List<List<Symbol>> matches = analyzeMatchesXY(query);
+        List<List<Symbol>> matches = analyzeExactXY(query);
         assertNull(matches);
     }
 
+
+    /**
+     * x=1 and (y=2 or ?)
+     * and(x1, or(y2, ?)
+     *
+     * x = 1 and (y=2 or x=3)
+     * and(x1, or(y2, x3)
+     *
+     * x=1 and (y=2 or y=3)
+     * and(x1, or(or(y2, y3), y4))
+     *
+     * branches: x1,
+     *
+     *
+     *
+     * x=1 and (y=2 or F)
+     * 1,2   1=1 and (2=2 or z=3) T
+     *
+     */
     @Test
     public void testPK2_Eq1_Foreign1() throws Exception {
         Symbol query = And(
-                Eq(Ref("x"), Literal.newLiteral(1)),
+                Eq("x", 1),
                 Or(
-                        Eq(Ref("y"), Literal.newLiteral(2)),
-                        Eq(Ref("z"), Literal.newLiteral(3))
+                        Eq("y", 2),
+                        Eq("z", 3)
                 ));
 
-        List<List<Symbol>> matches = analyzeMatchesXY(query);
+        List<List<Symbol>> matches = analyzeExactXY(query);
         assertNull(matches);
     }
 
@@ -271,7 +324,7 @@ public class EqualityExtractorTest extends BaseAnalyzerTest {
                         Eq(Ref("y"), Literal.newLiteral(3))
                 ));
 
-        List<List<Symbol>> matches = analyzeMatchesXY(query);
+        List<List<Symbol>> matches = analyzeExactXY(query);
         assertThat(matches.size(), is(2));
         for (List<Symbol> match : matches) {
             System.out.println(match);
@@ -282,7 +335,7 @@ public class EqualityExtractorTest extends BaseAnalyzerTest {
     @Test
     public void testPK2_Eq1() throws Exception {
         Symbol query = Eq(Ref("x"), Literal.newLiteral(1));
-        List<List<Symbol>> matches = analyzeMatchesXY(query);
+        List<List<Symbol>> matches = analyzeExactXY(query);
         assertNull(matches);
     }
 

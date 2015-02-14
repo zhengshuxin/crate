@@ -19,7 +19,7 @@ public class WhereClauseValidator {
     private static final Visitor visitor = new Visitor();
 
     public Symbol validate(WhereClause whereClause) {
-        return visitor.process(whereClause.query(), new Visitor.Context());
+        return visitor.process(whereClause.query(), new Visitor.Context(whereClause));
     }
 
     private static class Visitor extends SymbolVisitor<Visitor.Context, Symbol> {
@@ -27,6 +27,11 @@ public class WhereClauseValidator {
         public static class Context {
 
             public final Stack<Function> functions = new Stack();
+            private final WhereClause whereClause;
+
+            public Context(WhereClause whereClause) {
+                this.whereClause = whereClause;
+            }
         }
 
         private final static String _SCORE = "_score";

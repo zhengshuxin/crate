@@ -75,7 +75,7 @@ public class QueryThenFetchConsumer implements Consumer {
             if (where != null){
                 WhereClauseAnalyzer whereClauseAnalyzer = new WhereClauseAnalyzer(analysisMetaData, table.tableRelation());
                 WhereClause whereClause = whereClauseAnalyzer.analyze(where);
-                if(whereClause.version().isPresent()){
+                if(whereClause.hasVersions()){
                     context.validationException(new VersionInvalidException());
                     return null;
                 }

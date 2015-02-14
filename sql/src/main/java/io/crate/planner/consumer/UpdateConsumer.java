@@ -27,6 +27,7 @@ import io.crate.analyze.relations.AnalyzedRelation;
 import io.crate.analyze.relations.AnalyzedRelationVisitor;
 import io.crate.analyze.relations.PlannedAnalyzedRelation;
 import io.crate.analyze.relations.TableRelation;
+import io.crate.analyze.where.DocKeys;
 import io.crate.analyze.where.WhereClauseAnalyzer;
 import io.crate.metadata.FunctionIdent;
 import io.crate.metadata.ReferenceIdent;
@@ -45,10 +46,7 @@ import io.crate.planner.node.dql.MergeNode;
 import io.crate.planner.projection.AggregationProjection;
 import io.crate.planner.projection.Projection;
 import io.crate.planner.projection.UpdateProjection;
-import io.crate.planner.symbol.Aggregation;
-import io.crate.planner.symbol.InputColumn;
-import io.crate.planner.symbol.Reference;
-import io.crate.planner.symbol.Symbol;
+import io.crate.planner.symbol.*;
 import io.crate.types.DataType;
 import io.crate.types.DataTypes;
 import io.crate.types.LongType;
@@ -112,7 +110,7 @@ public class UpdateConsumer implements Consumer {
                 if (whereClause.noMatch()){
                     continue;
                 }
-                if (whereClause.primaryKeys().isPresent()) {
+                if (whereClause.docKeys().isPresent()) {
                     if (upsertByIdNode == null) {
                         Tuple<String[], Symbol[]> assignments = convertAssignments(nestedAnalysis.assignments());
                         upsertByIdNode = new UpsertByIdNode(false, statement.nestedStatements().size() > 1, assignments.v1(), null);
@@ -134,12 +132,12 @@ public class UpdateConsumer implements Consumer {
                                                 TableInfo tableInfo,
                                                 WhereClause whereClause) {
 
-            if(whereClause.version().isPresent()){
-                VersionRewriter versionRewriter = new VersionRewriter();
-                Symbol whereClauseQuery = versionRewriter.rewrite(whereClause.query());
-                whereClause = new WhereClause(whereClauseQuery, whereClause.primaryKeys().orNull(), whereClause.partitions(),
-                        whereClause.version().orNull());
+            Symbol versionSymbol = null;
+            if(whereClause.hasVersions()){
+                versionSymbol = VersionRewriter.get(whereClause.query());
+                whereClause = new WhereClause(whereClause.query(), whereClause.docKeys().orNull(), whereClause.partitions());
             }
+
 
             if (!whereClause.noMatch() || !(tableInfo.isPartitioned() && whereClause.partitions().isEmpty())) {
                 // for updates, we always need to collect the `_uid`
@@ -150,11 +148,16 @@ public class UpdateConsumer implements Consumer {
 
                 Tuple<String[], Symbol[]> assignments = convertAssignments(nestedAnalysis.assignments());
 
+                Long version = null;
+                if (versionSymbol != null){
+                    version = ValueSymbolVisitor.LONG.process(versionSymbol);
+                }
+
                 UpdateProjection updateProjection = new UpdateProjection(
                         new InputColumn(0, DataTypes.STRING),
                         assignments.v1(),
                         assignments.v2(),
-                        whereClause.version().orNull());
+                        version);
 
                 CollectNode collectNode = PlanNodeBuilder.collect(
                         tableInfo,
@@ -181,13 +184,13 @@ public class UpdateConsumer implements Consumer {
 
             Tuple<String[], Symbol[]> assignments = convertAssignments(nestedAnalysis.assignments());
 
-            for (Id primaryKey : whereClause.primaryKeys().get()) {
+            for (DocKeys.DocKey key : whereClause.docKeys().get()) {
                 upsertByIdNode.add(
                         indices[0],
-                        primaryKey.stringValue(),
-                        primaryKey.routingValue(),
+                        key.id(),
+                        key.routing(),
                         assignments.v2(),
-                        whereClause.version().orNull());
+                        key.version().orNull());
             }
         }
 

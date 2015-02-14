@@ -30,7 +30,6 @@ import com.google.common.collect.Lists;
 import io.crate.analyze.*;
 import io.crate.analyze.relations.FieldProvider;
 import io.crate.analyze.relations.TableRelation;
-import io.crate.analyze.where.WhereClauseValidator;
 import io.crate.exceptions.ColumnUnknownException;
 import io.crate.exceptions.ColumnValidationException;
 import io.crate.exceptions.UnsupportedFeatureException;
@@ -52,7 +51,6 @@ import io.crate.planner.symbol.*;
 import io.crate.planner.symbol.Literal;
 import io.crate.sql.ExpressionFormatter;
 import io.crate.sql.tree.*;
-import io.crate.sql.tree.InPredicate;
 import io.crate.sql.tree.MatchPredicate;
 import io.crate.types.*;
 import org.elasticsearch.ElasticsearchParseException;
@@ -139,11 +137,7 @@ public class ExpressionAnalyzer {
     public WhereClause generateWhereClause(Optional<Expression> whereExpression, ExpressionAnalysisContext context,
                                            TableRelation tableRelation) {
         if (whereExpression.isPresent()) {
-            WhereClause whereClause = new WhereClause(normalize(convert(whereExpression.get(), context)), null, null, null);
-            if(whereClause.hasQuery()){
-                WhereClauseValidator whereClauseValidator = new WhereClauseValidator();
-                whereClauseValidator.validate(whereClause);
-            }
+            WhereClause whereClause = new WhereClause(normalize(convert(whereExpression.get(), context)), null, null);
             return tableRelation.resolve(whereClause);
         } else {
             return WhereClause.MATCH_ALL;

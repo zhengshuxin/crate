@@ -25,7 +25,7 @@ import com.google.common.collect.Iterators;
 import io.crate.analyze.WhereClause;
 import io.crate.core.StringUtils;
 import io.crate.planner.node.PlanNodeVisitor;
-import io.crate.planner.symbol.StringValueSymbolVisitor;
+import io.crate.planner.symbol.ValueSymbolVisitor;
 
 public class ESDeleteByQueryNode extends DMLPlanNode {
 
@@ -39,7 +39,7 @@ public class ESDeleteByQueryNode extends DMLPlanNode {
         this.whereClause = whereClause;
         if (whereClause.clusteredBy().isPresent()){
             routing = StringUtils.ROUTING_JOINER.join(Iterators.transform(
-                    whereClause.clusteredBy().get().iterator(), StringValueSymbolVisitor.PROCESS_FUNCTION));
+                    whereClause.clusteredBy().get().iterator(), ValueSymbolVisitor.STRING.function));
         } else {
             this.routing = null;
         }

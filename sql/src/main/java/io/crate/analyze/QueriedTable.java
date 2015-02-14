@@ -57,9 +57,10 @@ public class QueriedTable implements QueriedRelation {
     }
 
     public QueriedRelation normalize(AnalysisMetaData analysisMetaData){
+        // TODO: move all into tableRelation.analyze(QuerySpec)
         EvaluatingNormalizer normalizer = new EvaluatingNormalizer(analysisMetaData, tableRelation, true);
         querySpec().normalize(normalizer);
-        querySpec().where(tableRelation.processEqualities(querySpec().where(), normalizer));
+        //querySpec().where(tableRelation.analyze(querySpec().where(), normalizer, analysisMetaData));
         return this;
     }
 

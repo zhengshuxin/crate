@@ -98,7 +98,7 @@ public class ReduceOnCollectorGroupByConsumer implements Consumer {
 
             WhereClauseAnalyzer whereClauseAnalyzer = new WhereClauseAnalyzer(analysisMetaData, table.tableRelation());
             WhereClause whereClause = whereClauseAnalyzer.analyze(table.querySpec().where());
-            if (whereClause.version().isPresent()) {
+            if (whereClause.hasVersions()) {
                 context.consumerContext.validationException(new VersionInvalidException());
                 return table;
             }

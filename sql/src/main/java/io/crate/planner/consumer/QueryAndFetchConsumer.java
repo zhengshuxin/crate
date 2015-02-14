@@ -97,7 +97,7 @@ public class QueryAndFetchConsumer implements Consumer {
             TableRelation tableRelation = table.tableRelation();
             WhereClauseAnalyzer whereClauseAnalyzer = new WhereClauseAnalyzer(analysisMetaData, tableRelation);
             WhereClause whereClause = whereClauseAnalyzer.analyze(tableRelation.resolve(table.querySpec().where()));
-            if(whereClause.version().isPresent()){
+            if(whereClause.hasVersions()){
                 context.consumerContext.validationException(new VersionInvalidException());
                 return table;
             }
