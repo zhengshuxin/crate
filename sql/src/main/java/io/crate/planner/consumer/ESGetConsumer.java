@@ -76,12 +76,12 @@ public class ESGetConsumer implements Consumer {
             WhereClauseAnalyzer whereClauseAnalyzer = new WhereClauseAnalyzer(analysisMetaData, table.tableRelation());
             WhereClause whereClause = whereClauseAnalyzer.analyze(table.querySpec().where());
 
-            if(whereClause.hasVersions()){
-                context.validationException(new VersionInvalidException());
+            if (!whereClause.docKeys().isPresent()) {
                 return null;
             }
 
-            if (!whereClause.primaryKeys().isPresent()) {
+            if(whereClause.docKeys().get().withVersions()){
+                context.validationException(new VersionInvalidException());
                 return null;
             }
 
@@ -113,7 +113,7 @@ public class ESGetConsumer implements Consumer {
                 return new ESGetNode(
                         indexName,
                         table.querySpec().outputs(),
-                        whereClause.primaryKeys().get(),
+                        whereClause.docKeys().get(),
                         null, null, null,
                         limit,
                         table.querySpec().offset(),
@@ -124,7 +124,7 @@ public class ESGetConsumer implements Consumer {
                 return new ESGetNode(
                         indexName,
                         table.querySpec().outputs(),
-                        whereClause.primaryKeys().get(),
+                        whereClause.docKeys().get(),
                         orderBy.orderBySymbols(),
                         orderBy.reverseFlags(),
                         orderBy.nullsFirst(),

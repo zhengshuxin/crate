@@ -21,10 +21,7 @@
 
 package io.crate.executor.transport;
 
-import com.google.common.base.Function;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
-import io.crate.analyze.Id;
 import io.crate.integrationtests.SQLTransportIntegrationTest;
 import io.crate.integrationtests.Setup;
 import io.crate.metadata.ColumnIdent;
@@ -40,13 +37,11 @@ import io.crate.test.integration.CrateIntegrationTest;
 import io.crate.test.integration.CrateTestCluster;
 import io.crate.testing.TestingHelpers;
 import io.crate.types.DataTypes;
-import org.apache.lucene.util.BytesRef;
 import org.elasticsearch.cluster.ClusterName;
 import org.elasticsearch.cluster.ClusterService;
 import org.junit.After;
 import org.junit.Before;
 
-import javax.annotation.Nullable;
 import java.util.Arrays;
 import java.util.List;
 
@@ -86,21 +81,16 @@ public class BaseTransportExecutorTest extends SQLTransportIntegrationTest {
     Reference partedDateRef = new Reference(new ReferenceInfo(
             new ReferenceIdent(partedTable, "date"), RowGranularity.DOC, DataTypes.TIMESTAMP));
 
-    protected static ESGetNode newGetNode(String index, List<Symbol> outputs, String id) {
-        return newGetNode(index, outputs, Arrays.asList(id));
+    protected static ESGetNode newGetNode(String index, List<Symbol> outputs, String singleStringKey) {
+        return newGetNode(index, outputs, Arrays.asList(singleStringKey));
     }
 
-    protected static ESGetNode newGetNode(String index, List<Symbol> outputs, List<String> ids) {
+    protected static ESGetNode newGetNode(String index, List<Symbol> outputs, List<String> singleStringKeys) {
         return new ESGetNode(
                 index,
                 outputs,
-                Lists.transform(ids, new Function<String, Id>() {
-                    @Nullable
-                    @Override
-                    public Id apply(String input) {
-                        return new Id(Arrays.asList(new BytesRef(input)));
-                    }
-                }),
+                singleStringKeys,
+                singleStringKeys,
                 ImmutableList.<Symbol>of(),
                 new boolean[0],
                 new Boolean[0],

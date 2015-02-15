@@ -119,6 +119,7 @@ public class WhereClauseValidatorTest extends BaseAnalyzerTest {
         expectedException.expectMessage(
                 "Filtering \"_version\" in WHERE clause only works using the \"=\" operator, checking for a numeric value");
         analyze("Select * from users where id = 1 and _version + 1 = 2");
+
     }
 
     @Test

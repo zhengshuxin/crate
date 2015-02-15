@@ -23,14 +23,14 @@ package io.crate.planner.node.dql;
 
 import com.google.common.base.MoreObjects;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
-import io.crate.analyze.Id;
+import io.crate.analyze.where.DocKeys;
 import io.crate.metadata.ReferenceInfo;
 import io.crate.planner.node.PlanNodeVisitor;
 import io.crate.planner.symbol.Symbol;
 import io.crate.planner.symbol.Symbols;
 import org.elasticsearch.common.Nullable;
 
+import java.util.ArrayList;
 import java.util.List;
 
 
@@ -51,7 +51,24 @@ public class ESGetNode extends ESDQLPlanNode implements DQLPlanNode {
 
     public ESGetNode(String index,
                      List<Symbol> outputs,
-                     List<Id> ids,
+                     DocKeys docKeys,
+                     @Nullable List<Symbol> sortSymbols,
+                     @Nullable boolean[] reverseFlags,
+                     @Nullable Boolean[] nullsFirst,
+                     @Nullable Integer limit,
+                     int offset,
+                     @Nullable List<ReferenceInfo> partitionBy) {
+        this(index, outputs, new ArrayList<String>(docKeys.size()), new ArrayList<String>(docKeys.size()), sortSymbols, reverseFlags, nullsFirst, limit, offset, partitionBy);
+        for (DocKeys.DocKey docKey : docKeys) {
+            ids.add(docKey.id());
+            routingValues.add(docKey.routing());
+        }
+    }
+
+    public ESGetNode(String index,
+                     List<Symbol> outputs,
+                     List<String> ids,
+                     List<String> routingValues,
                      @Nullable List<Symbol> sortSymbols,
                      @Nullable boolean[] reverseFlags,
                      @Nullable Boolean[] nullsFirst,
@@ -60,9 +77,10 @@ public class ESGetNode extends ESDQLPlanNode implements DQLPlanNode {
                      @Nullable List<ReferenceInfo> partitionBy) {
         this.index = index;
         this.outputs = outputs;
+        this.ids = ids;
+        this.routingValues = routingValues;
         outputTypes(Symbols.extractTypes(outputs));
-        this.ids = Lists.transform(ids, Id.ID_STRING_FUNCTION);
-        this.routingValues = Lists.transform(ids, Id.ROUTING_VALUES_FUNCTION);
+
         this.sortSymbols = MoreObjects.firstNonNull(sortSymbols, ImmutableList.<Symbol>of());
         this.reverseFlags = MoreObjects.firstNonNull(reverseFlags, EMPTY_REVERSE_FLAGS);
         this.nullsFirst = MoreObjects.firstNonNull(nullsFirst, EMPTY_NULLS_FIRST);

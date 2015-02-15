@@ -47,11 +47,7 @@ public class WhereClause extends QueryClause implements Streamable {
 
     private Optional<Set<Literal>> clusteredBy = Optional.absent();
 
-    @Deprecated
-    private Optional<List<Id>> primaryKeys = Optional.absent();
-
     private Optional<DocKeys> docKeys = Optional.absent();
-
 
     private List<String> partitions = new ArrayList<>();
 
@@ -125,22 +121,6 @@ public class WhereClause extends QueryClause implements Streamable {
             this.partitions.add(ValueSymbolVisitor.STRING.process(partition));
         }
     }
-
-    @Deprecated
-    public void primaryKeys(@Nullable List<Id> primaryKeys) {
-        assert this != NO_MATCH && this != MATCH_ALL: "may not set primaryKeys on MATCH_ALL/NO_MATCH singleton";
-        if (primaryKeys == null || primaryKeys.isEmpty()){
-            this.primaryKeys = Optional.absent();
-        } else {
-            this.primaryKeys = Optional.of(primaryKeys);
-        }
-    }
-
-    @Deprecated
-    public Optional<List<Id>> primaryKeys() {
-        return primaryKeys;
-    }
-
 
     public void docKeys(@Nullable DocKeys docKeys) {
         assert this != NO_MATCH && this != MATCH_ALL: "may not set docKeys on MATCH_ALL/NO_MATCH singleton";

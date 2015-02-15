@@ -138,7 +138,7 @@ public class Planner extends AnalyzedStatementVisitor<Planner.Context, Plan> {
             if (whereClause.noMatch()) {
                 continue;
             }
-            if (whereClause.primaryKeys().isPresent() && whereClause.primaryKeys().get().size()==1) {
+            if (whereClause.docKeys().isPresent() && whereClause.docKeys().get().size()==1) {
                 createESDeleteNode(tableRelation.tableInfo(), whereClause, plan);
             } else {
                 createESDeleteByQueryNode(tableRelation.tableInfo(), whereClause, plan);

@@ -308,7 +308,8 @@ public abstract class BaseAnalyzerTest {
     }
 
     protected AnalyzedStatement analyze(String statement, Object[] params) {
-        return analyzer.analyze(SqlParser.createStatement(statement), params, new Object[0][]).analyzedStatement();
+        AnalyzedStatement stmt = analyzer.analyze(SqlParser.createStatement(statement), params, new Object[0][]).analyzedStatement();
+        return stmt;
     }
 
     protected AnalyzedStatement analyze(String statement, Object[][] bulkArgs) {
