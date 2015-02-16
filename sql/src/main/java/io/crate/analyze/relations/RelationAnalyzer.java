@@ -94,6 +94,7 @@ public class RelationAnalyzer extends DefaultTraversalVisitor<AnalyzedRelation, 
         expressionAnalysisContext = new ExpressionAnalysisContext();
 
         WhereClause whereClause = analyzeWhere(node.getWhere());
+
         SelectAnalyzer.SelectAnalysis selectAnalysis = SelectAnalyzer.analyzeSelect(
                 node.getSelect(),
                 context.sources(),
@@ -125,7 +126,8 @@ public class RelationAnalyzer extends DefaultTraversalVisitor<AnalyzedRelation, 
             if (entry.getValue() instanceof TableRelation){
                 QueriedTable relation = new QueriedTable(entry.getKey(), (TableRelation) entry.getValue(),
                         selectAnalysis.outputNames(), querySpec);
-                return relation.normalize(analysisMetaData);
+                relation = relation.normalize(analysisMetaData);
+                return relation;
             } else {
                 throw new UnsupportedOperationException
                         ("Only tables are allowed in the FROM clause, got: " + entry.getValue());

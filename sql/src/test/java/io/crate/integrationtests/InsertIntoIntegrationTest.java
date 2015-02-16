@@ -569,4 +569,12 @@ public class InsertIntoIntegrationTest extends SQLTransportIntegrationTest {
 
     }
 
+    @Test
+    public void testInsertFromSubQueryWithVersion() throws Exception {
+        expectedException.expect(SQLActionException.class);
+        expectedException.expectMessage("\"_version\" column is not valid in the WHERE clause");
+        execute("create table users (name string)");
+        execute("insert into users (name) (select name from users where _version = 1)");
+    }
+
 }

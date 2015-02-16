@@ -100,6 +100,13 @@ public class TransportExecutorTest extends BaseTransportExecutorTest {
         clusterName = null;
     }
 
+    protected ESGetNode newGetNode(String tableName, List<Symbol> outputs, String singleStringKey) {
+        return newGetNode(tableName, outputs, Arrays.asList(singleStringKey));
+    }
+
+    protected ESGetNode newGetNode(String tableName, List<Symbol> outputs, List<String> singleStringKeys) {
+        return newGetNode(docSchemaInfo.getTableInfo(tableName), outputs, singleStringKeys);
+    }
 
 
     @Test

@@ -138,7 +138,9 @@ public class ExpressionAnalyzer {
                                            TableRelation tableRelation) {
         if (whereExpression.isPresent()) {
             WhereClause whereClause = new WhereClause(normalize(convert(whereExpression.get(), context)), null, null);
-            return tableRelation.resolve(whereClause);
+            whereClause = tableRelation.resolve(whereClause);
+            //WhereClauseValidator.validate(whereClause);
+            return whereClause;
         } else {
             return WhereClause.MATCH_ALL;
         }

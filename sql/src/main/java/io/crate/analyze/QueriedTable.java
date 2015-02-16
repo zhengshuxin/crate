@@ -24,6 +24,7 @@ package io.crate.analyze;
 import io.crate.analyze.relations.AnalyzedRelationVisitor;
 import io.crate.analyze.relations.QueriedRelation;
 import io.crate.analyze.relations.TableRelation;
+import io.crate.analyze.where.WhereClauseAnalyzer;
 import io.crate.metadata.OutputName;
 import io.crate.metadata.Path;
 import io.crate.planner.symbol.Field;
@@ -56,11 +57,11 @@ public class QueriedTable implements QueriedRelation {
         return tableRelation;
     }
 
-    public QueriedRelation normalize(AnalysisMetaData analysisMetaData){
-        // TODO: move all into tableRelation.analyze(QuerySpec)
+    public QueriedTable normalize(AnalysisMetaData analysisMetaData){
         EvaluatingNormalizer normalizer = new EvaluatingNormalizer(analysisMetaData, tableRelation, true);
         querySpec().normalize(normalizer);
-        //querySpec().where(tableRelation.analyze(querySpec().where(), normalizer, analysisMetaData));
+        WhereClauseAnalyzer whereClauseAnalyzer = new WhereClauseAnalyzer(analysisMetaData, tableRelation);
+        querySpec().where(whereClauseAnalyzer.analyze(querySpec().where()));
         return this;
     }
 

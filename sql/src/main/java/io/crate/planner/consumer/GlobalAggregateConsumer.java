@@ -30,7 +30,6 @@ import io.crate.analyze.relations.AnalyzedRelation;
 import io.crate.analyze.relations.AnalyzedRelationVisitor;
 import io.crate.analyze.relations.PlannedAnalyzedRelation;
 import io.crate.analyze.relations.TableRelation;
-import io.crate.analyze.where.WhereClauseAnalyzer;
 import io.crate.exceptions.VersionInvalidException;
 import io.crate.metadata.FunctionInfo;
 import io.crate.metadata.ReferenceInfo;
@@ -90,13 +89,11 @@ public class GlobalAggregateConsumer implements Consumer {
                 return new NoopPlannedAnalyzedRelation(table);
             }
 
-            WhereClauseAnalyzer whereClauseAnalyzer = new WhereClauseAnalyzer(analysisMetaData, table.tableRelation());
-            WhereClause whereClause = whereClauseAnalyzer.analyze(table.querySpec().where());
-            if (whereClause.hasVersions()){
+            if (table.querySpec().where().hasVersions()){
                 context.validationException(new VersionInvalidException());
                 return null;
             }
-            return globalAggregates(table, table.tableRelation(), whereClause, null);
+            return globalAggregates(table, table.tableRelation(), table.querySpec().where(), null);
         }
 
         @Override

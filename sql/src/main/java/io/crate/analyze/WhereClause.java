@@ -45,7 +45,7 @@ public class WhereClause extends QueryClause implements Streamable {
     public static final WhereClause MATCH_ALL = new WhereClause();
     public static final WhereClause NO_MATCH = new WhereClause(null, true);
 
-    private Optional<Set<Literal>> clusteredBy = Optional.absent();
+    private Optional<Set<Symbol>> clusteredBy = Optional.absent();
 
     private Optional<DocKeys> docKeys = Optional.absent();
 
@@ -92,7 +92,7 @@ public class WhereClause extends QueryClause implements Streamable {
         return normalizedWhereClause;
     }
 
-    public Optional<Set<Literal>> clusteredBy() {
+    public Optional<Set<Symbol>> clusteredBy() {
         return clusteredBy;
     }
 
@@ -108,7 +108,7 @@ public class WhereClause extends QueryClause implements Streamable {
         }
     }
 
-    public void clusteredBy(@Nullable Set<Literal> clusteredBy) {
+    public void clusteredBy(@Nullable Set<Symbol> clusteredBy) {
         assert this != NO_MATCH && this != MATCH_ALL: "may not set clusteredByLiteral on MATCH_ALL/NO_MATCH singleton";
         if (clusteredBy != null && !clusteredBy.isEmpty()) {
             this.clusteredBy = Optional.of(clusteredBy);

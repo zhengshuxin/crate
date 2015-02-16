@@ -45,7 +45,9 @@ import org.elasticsearch.common.inject.Injector;
 import org.elasticsearch.common.inject.ModulesBuilder;
 import org.hamcrest.Matchers;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.ExpectedException;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -60,6 +62,9 @@ import static org.mockito.Mockito.when;
 
 @SuppressWarnings("unchecked")
 public class WhereClauseAnalyzerTest extends AbstractRandomizedTest {
+
+    @Rule
+    public ExpectedException expectedException = ExpectedException.none();
 
     private Analyzer analyzer;
     private AnalysisMetaData ctxMetaData;
@@ -106,6 +111,20 @@ public class WhereClauseAnalyzerTest extends AbstractRandomizedTest {
                                     new PartitionName("parted", Arrays.asList(new BytesRef("1395874800000"))).stringValue(),
                                     new PartitionName("parted", Arrays.asList(new BytesRef("1395961200000"))).stringValue(),
                                     new PartitionName("parted", new ArrayList<BytesRef>() {{
+                                        add(null);
+                                    }}).stringValue())
+                            .build());
+            when(schemaInfo.getTableInfo("parted_pk")).thenReturn(
+                    TestingTableInfo.builder(new TableIdent("doc", "parted"), RowGranularity.DOC, twoNodeRouting)
+                            .addPrimaryKey("id").addPrimaryKey("date")
+                            .add("id", DataTypes.INTEGER, null)
+                            .add("name", DataTypes.STRING, null)
+                            .add("date", DataTypes.TIMESTAMP, null, true)
+                            .add("obj", DataTypes.OBJECT, null, ColumnPolicy.IGNORED)
+                            .addPartitions(
+                                    new PartitionName("parted_pk", Arrays.asList(new BytesRef("1395874800000"))).stringValue(),
+                                    new PartitionName("parted_pk", Arrays.asList(new BytesRef("1395961200000"))).stringValue(),
+                                    new PartitionName("parted_pk", new ArrayList<BytesRef>() {{
                                         add(null);
                                     }}).stringValue())
                             .build());
@@ -156,11 +175,13 @@ public class WhereClauseAnalyzerTest extends AbstractRandomizedTest {
     private WhereClause analyzeSelect(String stmt, Object... args) {
         SelectAnalyzedStatement statement = (SelectAnalyzedStatement) analyzer.analyze(
                 SqlParser.createStatement(stmt), args, new Object[0][]).analyzedStatement();
-        QueriedTable sourceRelation = (QueriedTable) statement.relation();
-
-        TableRelation tableRelation = sourceRelation.tableRelation();
-        WhereClauseAnalyzer whereClauseAnalyzer = new WhereClauseAnalyzer(ctxMetaData, tableRelation);
-        return whereClauseAnalyzer.analyze(statement.relation().querySpec().where());
+        return statement.relation().querySpec().where();
+        //QueriedTable sourceRelation = (QueriedTable) statement.relation();
+//
+//
+//        TableRelation tableRelation = sourceRelation.tableRelation();
+//        WhereClauseAnalyzer whereClauseAnalyzer = new WhereClauseAnalyzer(ctxMetaData, tableRelation);
+//        return whereClauseAnalyzer.analyze(statement.relation().querySpec().where());
     }
 
     private WhereClause analyzeSelectWhere(String stmt) {
@@ -191,6 +212,15 @@ public class WhereClauseAnalyzerTest extends AbstractRandomizedTest {
                 Matchers.contains(new PartitionName("parted", Arrays.asList(new BytesRef("1395874800000"))).stringValue()));
     }
 
+    @Test
+    public void testSelectPartitionedByPK() throws Exception {
+        WhereClause whereClause = analyzeSelectWhere("select id from parted_pk where id = 1 and date = 1395874800000");
+        assertThat(whereClause.docKeys().get(), contains(isDocKey(1, 1395874800000L)));
+        // not partitions if docKeys are there
+        assertThat(whereClause.partitions(), empty());
+
+    }
+
 
 
 
@@ -211,39 +241,16 @@ public class WhereClauseAnalyzerTest extends AbstractRandomizedTest {
     }
 
     @Test
-    public void testUpdateWhereVersionOrOperator() throws Exception {
-//        expectedException.expect(UnsupportedOperationException.class);
-//        expectedException.expectMessage(
-//                "Filtering \"_version\" in WHERE clause only works using the \"=\" operator, checking for a numeric value");
-        UpdateAnalyzedStatement updateAnalyzedStatement = analyzeUpdate(
-                "update users set awesome =  true where _version = 1 or _version = 2");
-        TableRelation tableRelation = (TableRelation) updateAnalyzedStatement.sourceRelation();
-        WhereClauseAnalyzer whereClauseAnalyzer = new WhereClauseAnalyzer(ctxMetaData, tableRelation);
-        assertThat(updateAnalyzedStatement.nestedStatements().get(0).whereClause().noMatch(), is(false));
-
-        WhereClause whereClause = whereClauseAnalyzer.analyze(updateAnalyzedStatement.nestedStatements().get(0).whereClause());
-        assertThat(whereClause.noMatch(), is(true));
-    }
-
-
-    @Test
     public void testUpdateWherePartitionedByColumn() throws Exception {
         UpdateAnalyzedStatement updateAnalyzedStatement = analyzeUpdate("update parted set id = 2 where date = 1395874800000");
         UpdateAnalyzedStatement.NestedAnalyzedStatement nestedAnalyzedStatement = updateAnalyzedStatement.nestedStatements().get(0);
 
-        assertThat(nestedAnalyzedStatement.whereClause().hasQuery(), is(true));
+        assertThat(nestedAnalyzedStatement.whereClause().hasQuery(), is(false));
         assertThat(nestedAnalyzedStatement.whereClause().noMatch(), is(false));
-
-        TableRelation tableRelation = (TableRelation) updateAnalyzedStatement.sourceRelation();
-        WhereClauseAnalyzer whereClauseAnalyzer = new WhereClauseAnalyzer(ctxMetaData, tableRelation);
-        WhereClause whereClause = whereClauseAnalyzer.analyze(nestedAnalyzedStatement.whereClause());
-
-        assertThat(whereClause.hasQuery(), is(false));
-        assertThat(whereClause.noMatch(), is(false));
 
         assertEquals(ImmutableList.of(
                         new PartitionName("parted", Arrays.asList(new BytesRef("1395874800000"))).stringValue()),
-                whereClause.partitions()
+                nestedAnalyzedStatement.whereClause().partitions()
         );
     }
 

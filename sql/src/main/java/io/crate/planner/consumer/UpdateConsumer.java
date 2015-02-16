@@ -22,13 +22,15 @@
 package io.crate.planner.consumer;
 
 import com.google.common.collect.ImmutableList;
-import io.crate.analyze.*;
+import io.crate.analyze.AnalysisMetaData;
+import io.crate.analyze.UpdateAnalyzedStatement;
+import io.crate.analyze.VersionRewriter;
+import io.crate.analyze.WhereClause;
 import io.crate.analyze.relations.AnalyzedRelation;
 import io.crate.analyze.relations.AnalyzedRelationVisitor;
 import io.crate.analyze.relations.PlannedAnalyzedRelation;
 import io.crate.analyze.relations.TableRelation;
 import io.crate.analyze.where.DocKeys;
-import io.crate.analyze.where.WhereClauseAnalyzer;
 import io.crate.metadata.FunctionIdent;
 import io.crate.metadata.ReferenceIdent;
 import io.crate.metadata.ReferenceInfo;
@@ -105,8 +107,7 @@ public class UpdateConsumer implements Consumer {
             List<List<DQLPlanNode>> childNodes = new ArrayList<>(statement.nestedStatements().size());
             UpsertByIdNode upsertByIdNode = null;
             for (UpdateAnalyzedStatement.NestedAnalyzedStatement nestedAnalysis : statement.nestedStatements()) {
-                WhereClauseAnalyzer whereClauseAnalyzer = new WhereClauseAnalyzer(analysisMetaData, tableRelation);
-                WhereClause whereClause = whereClauseAnalyzer.analyze(nestedAnalysis.whereClause());
+                WhereClause whereClause = nestedAnalysis.whereClause();
                 if (whereClause.noMatch()){
                     continue;
                 }

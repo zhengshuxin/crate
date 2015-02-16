@@ -85,12 +85,9 @@ public class EqualityExtractor {
                 } else {
                     anyNull = true;
                 }
-                System.out.print(proxy.forDisplay() + '\t');
             }
-            System.out.print("\t=== ");
             Symbol normalized = normalizer.normalize(proxiedTree);
             if (normalized == Literal.BOOLEAN_TRUE){
-                System.out.println("MATCH");
                 if (anyNull){
                     return null;
                 }
@@ -101,7 +98,6 @@ public class EqualityExtractor {
                 }
                 result.add(row);
             } else {
-                System.out.println("NOMATCH");
                 for (EqProxy proxy : proxies) {
                     proxy.reset();
                 }
@@ -172,7 +168,7 @@ public class EqualityExtractor {
 
         @Override
         public String toString() {
-            return "EqProy{" + forDisplay() + "}";
+            return "EqProxy{" + forDisplay() + "}";
         }
     }
 
@@ -218,7 +214,6 @@ public class EqualityExtractor {
                 }
                 return comps;
             }
-
         }
 
         @Override

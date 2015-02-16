@@ -25,10 +25,12 @@ import com.google.common.base.MoreObjects;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import io.crate.Constants;
-import io.crate.analyze.*;
+import io.crate.analyze.AnalysisMetaData;
+import io.crate.analyze.HavingClause;
+import io.crate.analyze.OrderBy;
+import io.crate.analyze.QueriedTable;
 import io.crate.analyze.relations.AnalyzedRelation;
 import io.crate.analyze.relations.AnalyzedRelationVisitor;
-import io.crate.analyze.where.WhereClauseAnalyzer;
 import io.crate.exceptions.VersionInvalidException;
 import io.crate.metadata.Routing;
 import io.crate.metadata.table.TableInfo;
@@ -94,14 +96,12 @@ public class DistributedGroupByConsumer implements Consumer {
             }
 
             TableInfo tableInfo = table.tableRelation().tableInfo();
-            WhereClauseAnalyzer whereClauseAnalyzer = new WhereClauseAnalyzer(analysisMetaData, table.tableRelation());
-            WhereClause whereClause = whereClauseAnalyzer.analyze(table.querySpec().where());
-            if(whereClause.hasVersions()){
+            if(table.querySpec().where().hasVersions()){
                 context.consumerContext.validationException(new VersionInvalidException());
                 return table;
             }
 
-            Routing routing = tableInfo.getRouting(whereClause, null);
+            Routing routing = tableInfo.getRouting(table.querySpec().where(), null);
 
             GroupByConsumer.validateGroupBySymbols(table.tableRelation(), table.querySpec().groupBy());
 

@@ -27,12 +27,17 @@ import io.crate.planner.symbol.Function;
 import io.crate.planner.symbol.Reference;
 import io.crate.planner.symbol.Symbol;
 
+import javax.annotation.Nullable;
+
 public class HasColumn {
 
     public static final Visitor VISITOR = new Visitor();
 
-    public static boolean appliesTo(Symbol input, ColumnIdent columnIdent) {
-        return VISITOR.process(input, columnIdent);
+    public static boolean appliesTo(@Nullable Symbol input, ColumnIdent columnIdent) {
+        if (input != null){
+            return VISITOR.process(input, columnIdent);
+        }
+        return false;
     }
 
     private static class Visitor extends DefaultTraversalSymbolVisitor<ColumnIdent, Boolean> {

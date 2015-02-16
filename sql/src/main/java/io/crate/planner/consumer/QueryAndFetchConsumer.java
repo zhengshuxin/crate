@@ -27,7 +27,6 @@ import io.crate.analyze.*;
 import io.crate.analyze.relations.AnalyzedRelation;
 import io.crate.analyze.relations.AnalyzedRelationVisitor;
 import io.crate.analyze.relations.TableRelation;
-import io.crate.analyze.where.WhereClauseAnalyzer;
 import io.crate.exceptions.UnsupportedFeatureException;
 import io.crate.exceptions.VersionInvalidException;
 import io.crate.metadata.DocReferenceConverter;
@@ -95,29 +94,27 @@ public class QueryAndFetchConsumer implements Consumer {
         @Override
         public AnalyzedRelation visitQueriedTable(QueriedTable table, Context context) {
             TableRelation tableRelation = table.tableRelation();
-            WhereClauseAnalyzer whereClauseAnalyzer = new WhereClauseAnalyzer(analysisMetaData, tableRelation);
-            WhereClause whereClause = whereClauseAnalyzer.analyze(tableRelation.resolve(table.querySpec().where()));
-            if(whereClause.hasVersions()){
+            if(table.querySpec().where().hasVersions()){
                 context.consumerContext.validationException(new VersionInvalidException());
                 return table;
             }
             TableInfo tableInfo = tableRelation.tableInfo();
 
-            if (tableInfo.schemaInfo().systemSchema() && whereClause.hasQuery()) {
-                ensureNoLuceneOnlyPredicates(whereClause.query());
+            if (tableInfo.schemaInfo().systemSchema() && table.querySpec().where().hasQuery()) {
+                ensureNoLuceneOnlyPredicates(table.querySpec().where().query());
             }
             if (table.querySpec().hasAggregates()) {
                 context.result = true;
-                return GlobalAggregateConsumer.globalAggregates(table, tableRelation, whereClause, null);
+                return GlobalAggregateConsumer.globalAggregates(table, tableRelation, table.querySpec().where(), null);
             } else {
                if(tableInfo.rowGranularity().ordinal() >= RowGranularity.DOC.ordinal() &&
-                        tableInfo.getRouting(whereClause, null).hasLocations() &&
+                        tableInfo.getRouting(table.querySpec().where(), null).hasLocations() &&
                         !tableInfo.schemaInfo().systemSchema()){
                    return table;
                }
 
                context.result = true;
-               return QueryAndFetchConsumer.normalSelect(table.querySpec(), whereClause, tableRelation,
+               return QueryAndFetchConsumer.normalSelect(table.querySpec(), table.querySpec().where(), tableRelation,
                        null, analysisMetaData.functions());
             }
         }

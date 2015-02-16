@@ -29,7 +29,6 @@ import io.crate.analyze.*;
 import io.crate.analyze.relations.AnalyzedRelation;
 import io.crate.analyze.relations.AnalyzedRelationVisitor;
 import io.crate.analyze.relations.TableRelation;
-import io.crate.analyze.where.WhereClauseAnalyzer;
 import io.crate.exceptions.VersionInvalidException;
 import io.crate.metadata.ColumnIdent;
 import io.crate.metadata.Functions;
@@ -132,19 +131,21 @@ public class InsertFromSubQueryConsumer implements Consumer {
             if (tableRelation == null) {
                 return table;
             }
-            WhereClauseAnalyzer whereClauseAnalyzer = new WhereClauseAnalyzer(analysisMetaData, tableRelation);
-            WhereClause whereClause = whereClauseAnalyzer.analyze(table.querySpec().where());
-            if(whereClause.hasVersions()){
+
+
+            if(table.querySpec().where().hasVersions()){
                 context.consumerContext.validationException(new VersionInvalidException());
                 return table;
             }
             context.result = true;
             if(table.querySpec().groupBy()!=null){
-                return groupBy(table, tableRelation, whereClause, context.indexWriterProjection, analysisMetaData.functions());
+                return groupBy(table, tableRelation, table.querySpec().where(), context.indexWriterProjection,
+                        analysisMetaData.functions());
             } else if(table.querySpec().hasAggregates()){
-                return GlobalAggregateConsumer.globalAggregates(table, tableRelation, whereClause, context.indexWriterProjection);
+                return GlobalAggregateConsumer.globalAggregates(table, tableRelation, table.querySpec().where(),
+                        context.indexWriterProjection);
             } else {
-                return QueryAndFetchConsumer.normalSelect(table.querySpec(), whereClause, tableRelation,
+                return QueryAndFetchConsumer.normalSelect(table.querySpec(), table.querySpec().where(), tableRelation,
                         context.indexWriterProjection, analysisMetaData.functions());
             }
         }
