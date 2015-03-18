@@ -173,7 +173,6 @@ public class PositionalBucketMergerTest extends RandomizedTest {
                         } catch (Exception e) {
                             setNextRowExceptions.add(e);
                         }
-                        bucketMerger.finish();
                         latch.countDown();
                     }
                 });
@@ -185,22 +184,9 @@ public class PositionalBucketMergerTest extends RandomizedTest {
 
         assertThat(setNextRowExceptions, empty());
 
-        final SettableFuture<Bucket> results = SettableFuture.create();
-        Futures.addCallback(resultProvider.result(), new FutureCallback<Bucket>() {
-            @Override
-            public void onSuccess(Bucket result) {
-                results.set(result);
-            }
-
-            @Override
-            public void onFailure(Throwable t) {
-                results.setException(t);
-            }
-        });
-
         expectedException.expect(Throwable.class);
         expectedException.expectMessage(String.format("[%d] I'm failing", numUpstreams-1));
-        results.get();
+        resultProvider.result().get();
 
         executorService.awaitTermination(1, TimeUnit.SECONDS);
     }
