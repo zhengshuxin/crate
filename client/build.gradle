@@ -1,6 +1,9 @@
-apply plugin: 'java'
-apply plugin: 'maven'
-apply plugin: 'signing'
+plugins {
+    id 'java'
+    id 'maven'
+    id 'signing'
+    id 'com.github.johnrengelman.shadow' version '1.2.1'
+}
 
 archivesBaseName = "crate-client"
 
@@ -76,11 +79,37 @@ jar {
     }
 }
 
+shadowJar {
+    exclude 'org/hyperic/**' // exclude sigar stuff
+    exclude 'META-INF/**'
+
+    relocate 'org.elasticsearch',     'io.crate.shade.elasticsearch'
+    relocate 'org.apache.lucene',     'io.crate.shade.lucene'
+    relocate 'org.joda',              'io.crate.shade.joda'
+    relocate 'org.tartarus.snowball', 'io.crate.shade.snowball'
+    relocate 'com.carrotsearch.hppc', 'io.crate.shade.hppc'
+    relocate 'com.fasterxml.jackson', 'io.crate.shade.jackson'
+    relocate 'com.google',            'io.crate.shade.guava'
+    relocate 'com.ning.compress',     'io.crate.shade.compress'
+    relocate 'org.jboss.netty',       'io.crate.shade.netty'
+    relocate 'org.apache.log4j',      'io.crate.shade.log4j'
+    relocate 'org.slf4j',             'io.crate.shade.slf4j'
+    relocate 'org.apache.commons',    'io.crate.shade.commons'
+    relocate 'jsr166e',               'io.crate.shade.jsr166e'
+
+    doLast {
+        manifest {
+            attributes("Implementation-Title": "Crate Data Java Client")
+            version project.version
+        }
+    }
+}
+
 task buildJar(dependsOn: [':app:getVersion', ':core:compileSharedJava', ':sql:compileSharedJava', 'classes']) {
     doLast {
         ext.version = project(':app').getVersion.version
         project.version = ext.version
-        tasks.jar.execute()
+        tasks.shadowJar.execute()
     }
 }
 
@@ -117,7 +146,7 @@ task buildSourceJar (dependsOn: [':app:getVersion'] ) << {
 }
 
 artifacts {
-    archives jar
+    archives shadowJar
     archives javadocJar
     archives sourceJar
 }
