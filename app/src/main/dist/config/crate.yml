@@ -561,12 +561,6 @@
 
 ###################################### SQL ####################################
 
-# If disabled, queries filtering for a primary key will be broadcast to all available shards
-# instead of hitting just the related single shard.
-#
-#crate.planner.optimize_pk_queries: true
-
-
 # An insert from subquery can take an enormous amount of time and ressources of
 # your cluster. To execute such queries more failsafe even with slower hardware
 # increase this timeout
