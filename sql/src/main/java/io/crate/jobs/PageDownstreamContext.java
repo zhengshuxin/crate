@@ -44,6 +44,7 @@ public class PageDownstreamContext {
     private final ArrayList<SettableFuture<Bucket>> bucketFutures;
     private final BitSet allFuturesSet;
     private final BitSet exhausted;
+    private final ArrayList<PageConsumeListener> listeners = new ArrayList<>();
 
     private volatile boolean failed = false;
 
@@ -95,10 +96,31 @@ public class PageDownstreamContext {
             if (allFuturesSet.get(bucketIdx)) {
                 throw new IllegalStateException("May not set the same bucket of a page more than once");
             }
+            listeners.add(pageConsumeListener);
 
             if (pageEmpty()) {
                 LOGGER.trace("calling nextPage");
-                pageDownstream.nextPage(new BucketPage(bucketFutures), pageConsumeListener);
+                pageDownstream.nextPage(new BucketPage(bucketFutures), new PageConsumeListener() {
+                    @Override
+                    public void needMore() {
+                        synchronized (lock) {
+                            for (PageConsumeListener listener : listeners) {
+                                listener.needMore();
+                            }
+                            listeners.clear();
+                        }
+                    }
+
+                    @Override
+                    public void finish() {
+                        synchronized (lock) {
+                            for (PageConsumeListener listener : listeners) {
+                                listener.finish();
+                            }
+                            listeners.clear();
+                        }
+                    }
+                });
             }
 
             if (isLast) {
