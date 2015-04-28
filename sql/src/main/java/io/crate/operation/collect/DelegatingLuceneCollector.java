@@ -94,7 +94,7 @@ public class DelegatingLuceneCollector extends Collector implements CrateLuceneC
     }
 
     @Override
-    public void doCollect(RamAccountingContext ramAccountingContext) throws Exception {
+    public void doCollect(RamAccountingContext ramAccountingContext) {
         boolean failed = false;
         this.ramAccountingContext = ramAccountingContext;
         // start collect
@@ -116,7 +116,6 @@ public class DelegatingLuceneCollector extends Collector implements CrateLuceneC
         } catch (Throwable t) {
             failed = true;
             collectorHandle.onError(t);
-            throw t;
         } finally {
             jobCollectContext.releaseContext(searchContext);
             if (!keepContextForFetcher || !producedRows || failed) {

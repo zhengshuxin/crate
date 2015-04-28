@@ -39,10 +39,14 @@ import io.crate.operation.ImplementationSymbolVisitor;
 import io.crate.operation.Input;
 import io.crate.operation.RowDownstream;
 import io.crate.operation.collect.blobs.BlobDocCollector;
+import io.crate.operation.delete.BulkDeleteRequest;
+import io.crate.operation.delete.BulkDeleteResponse;
 import io.crate.operation.delete.DeleteCollectorDelegate;
+import io.crate.operation.delete.DeleteOperation;
 import io.crate.operation.projectors.ProjectionToProjectorVisitor;
 import io.crate.operation.reference.DocLevelReferenceResolver;
 import io.crate.operation.reference.doc.blob.BlobReferenceResolver;
+import io.crate.operation.reference.doc.lucene.LuceneCollectorExpression;
 import io.crate.operation.reference.doc.lucene.LuceneDocLevelReferenceResolver;
 import io.crate.planner.RowGranularity;
 import io.crate.planner.node.dml.DeleteByQueryNode;
@@ -51,6 +55,7 @@ import io.crate.planner.symbol.Literal;
 import org.apache.lucene.search.Filter;
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.bulk.BulkRetryCoordinatorPool;
+import org.elasticsearch.action.bulk.SymbolBasedBulkShardProcessor;
 import org.elasticsearch.cache.recycler.CacheRecycler;
 import org.elasticsearch.cache.recycler.PageCacheRecycler;
 import org.elasticsearch.cluster.ClusterService;
@@ -89,6 +94,8 @@ public class ShardCollectService {
     private final boolean isBlobShard;
     private final BlobIndices blobIndices;
     private final TransportActionProvider transportActionProvider;
+    private final BulkRetryCoordinatorPool bulkRetryCoordinatorPool;
+    private final Settings settings;
 
     @Inject
     public ShardCollectService(ThreadPool threadPool,
@@ -147,17 +154,26 @@ public class ShardCollectService {
                 shardId
         );
         this.transportActionProvider = transportActionProvider;
+        this.settings = settings;
+        this.bulkRetryCoordinatorPool = bulkRetryCoordinatorPool;
     }
 
     public CrateCollector getDeleteCollector(final DeleteByQueryNode deleteByQueryNode,
-                                       final JobCollectContext jobCollectContext,
-                                       final int jobSearchContextId,
-                                       final ActionListener<Long> shardResultListener) throws Exception {
+                                             final JobCollectContext jobCollectContext,
+                                             final int jobSearchContextId,
+                                             final ActionListener<Long> shardResultListener) throws Exception {
         final SearchShardTarget searchShardTarget = new SearchShardTarget(
                 clusterService.state().nodes().localNodeId(),
                 shardId.getIndex(),
                 shardId.id());
         final IndexShard indexShard = indexService.shardSafe(shardId.id());
+        final LuceneCollectorExpression<?> routingColumn;
+        if (deleteByQueryNode.routingColumn().isPresent()) {
+            CollectInputSymbolVisitor.Context docCtx = docInputSymbolVisitor.process(deleteByQueryNode.routingColumn().get());
+            routingColumn = (LuceneCollectorExpression<?>)docCtx.docLevelExpressions().get(0);
+        } else {
+            routingColumn = null;
+        }
 
         return jobCollectContext.createCollectorAndContext(
                 indexShard,
@@ -182,7 +198,7 @@ public class ShardCollectService {
                                     bigArrays,
                                     threadPool.estimatedTimeInMillisCounter(),
                                     Optional.<Scroll>absent(),
-                                    CollectContextService.DEFAULT_KEEP_ALIVE
+                                    JobContextService.DEFAULT_KEEP_ALIVE
                             );
                             LuceneQueryBuilder.Context ctx = luceneQueryBuilder.convert(
                                     deleteByQueryNode.whereClause(), localContext, indexService.cache());
@@ -191,6 +207,16 @@ public class ShardCollectService {
                             if (minScore != null) {
                                 localContext.minimumScore(minScore);
                             }
+                            SymbolBasedBulkShardProcessor<BulkDeleteRequest, BulkDeleteResponse> bulkShardProcessor = new SymbolBasedBulkShardProcessor<>(
+                                    clusterService,
+                                    transportActionProvider.transportBulkCreateIndicesAction(),
+                                    settings,
+                                    bulkRetryCoordinatorPool,
+                                    false, // don't auto create indices
+                                    DeleteOperation.DEFAULT_BULK_SIZE,
+                                    new BulkDeleteRequest.Builder(),
+                                    new BulkDeleteRequest.Executor(transportActionProvider.transportBulkAction())
+                            );
                             return new DelegatingLuceneCollector(
                                     jobCollectContext,
                                     localContext,
@@ -199,7 +225,8 @@ public class ShardCollectService {
                                     new DeleteCollectorDelegate(
                                             shardId,
                                             shardResultListener,
-                                            transportActionProvider.transportDeleteAction())
+                                            bulkShardProcessor,
+                                            Optional.<LuceneCollectorExpression<?>>fromNullable(routingColumn))
                             );
                         } catch (Throwable t) {
                             if (localContext != null) {

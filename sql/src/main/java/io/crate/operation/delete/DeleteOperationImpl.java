@@ -26,8 +26,9 @@ import com.google.common.collect.Lists;
 import io.crate.breaker.RamAccountingContext;
 import io.crate.exceptions.TableUnknownException;
 import io.crate.exceptions.UnhandledServerException;
+import io.crate.jobs.JobContextService;
+import io.crate.jobs.JobExecutionContext;
 import io.crate.operation.ThreadPools;
-import io.crate.operation.collect.CollectContextService;
 import io.crate.operation.collect.CrateCollector;
 import io.crate.operation.collect.JobCollectContext;
 import io.crate.operation.collect.ShardCollectService;
@@ -51,7 +52,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * TODO: naming
@@ -60,22 +63,21 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class DeleteOperationImpl implements DeleteOperation {
 
     private static final ESLogger LOGGER = Loggers.getLogger(DeleteOperationImpl.class);
-
     public static final String EXECUTOR_NAME = ThreadPool.Names.SEARCH;
 
     private final ClusterService clusterService;
     private final IndicesService indicesService;
-    private final CollectContextService collectContextService;
+    private final JobContextService jobContextService;
     private final ThreadPool threadPool;
 
     @Inject
     public DeleteOperationImpl(ClusterService clusterService,
                                IndicesService indicesService,
-                               CollectContextService collectContextService,
+                               JobContextService collectContextService,
                                ThreadPool threadPool) {
         this.clusterService = clusterService;
         this.indicesService = indicesService;
-        this.collectContextService = collectContextService;
+        this.jobContextService = collectContextService;
         this.threadPool = threadPool;
     }
 
@@ -86,8 +88,9 @@ public class DeleteOperationImpl implements DeleteOperation {
         String localNodeId = clusterService.state().nodes().localNodeId();
         final int jobSearchContextId = deleteNode.routing().jobSearchContextIdBase();
 
-        assert deleteNode.jobId().isPresent() : "jobId must be set on CollectNode";
-        JobCollectContext jobCollectContext = collectContextService.acquireContext(deleteNode.jobId().get());
+        assert deleteNode.jobId().isPresent() : "jobId must be set on deleteNode";
+        JobExecutionContext jobExecutionContext = jobContextService.getContext(deleteNode.jobId().get());
+        JobCollectContext jobCollectContext = jobExecutionContext.getCollectContext(deleteNode.executionNodeId());
         final int numShards = deleteNode.routing().numShards();
         List<CrateCollector> shardCollectors = new ArrayList<>(numShards);
 
@@ -165,29 +168,33 @@ public class DeleteOperationImpl implements DeleteOperation {
     private static class DeleteShardListener implements ActionListener<Long> {
         private final ActionListener<Long> listener;
         AtomicInteger pending;
-        long aggregated;
+        AtomicLong aggregated;
+        AtomicBoolean alreadyFailed;
 
         public DeleteShardListener(int numShards, ActionListener<Long> finalListener) {
             this.listener = finalListener;
             this.pending = new AtomicInteger(numShards);
-            this.aggregated = 0L;
+            this.aggregated = new AtomicLong(0L);
+            this.alreadyFailed = new AtomicBoolean(false);
         }
 
         @Override
         public void onResponse(Long aLong) {
             if (aLong != null) {
-                aggregated += aLong;
+                aggregated.addAndGet(aLong);
             }
             if (pending.decrementAndGet() == 0) {
                 LOGGER.trace("all delete operations finished");
-                listener.onResponse(aggregated);
+                listener.onResponse(aggregated.get());
             }
         }
 
         @Override
         public void onFailure(Throwable e) {
             LOGGER.trace("delete failed", e);
-            listener.onFailure(e);
+            if (alreadyFailed.compareAndSet(false, true)) {
+                listener.onFailure(e);
+            }
         }
     }
 }

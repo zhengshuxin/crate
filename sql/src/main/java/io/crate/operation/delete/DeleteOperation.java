@@ -24,8 +24,13 @@ package io.crate.operation.delete;
 import io.crate.breaker.RamAccountingContext;
 import io.crate.planner.node.dml.DeleteByQueryNode;
 import org.elasticsearch.action.ActionListener;
+import org.elasticsearch.common.inject.ImplementedBy;
 
+@ImplementedBy(DeleteOperationImpl.class)
 public interface DeleteOperation {
+
+    int DEFAULT_BULK_SIZE = 1024;
+
     void delete(DeleteByQueryNode deleteNode,
                 RamAccountingContext ramAccountingContext,
                 ActionListener<Long> listener);

@@ -21,6 +21,7 @@
 
 package io.crate.planner.node;
 
+import io.crate.planner.node.dml.DeleteByQueryNode;
 import io.crate.planner.node.dql.CollectNode;
 import io.crate.planner.node.dql.CountNode;
 import io.crate.planner.node.dql.MergeNode;
@@ -45,5 +46,9 @@ public class ExecutionNodeVisitor<C, R> {
 
     public R visitCountNode(CountNode countNode, C context) {
         return visitExecutionNode(countNode, context);
+    }
+
+    public R visitDeleteByQueryNode(DeleteByQueryNode deleteByQueryNode, C context) {
+        return visitExecutionNode(deleteByQueryNode, context);
     }
 }

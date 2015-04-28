@@ -23,7 +23,8 @@ package io.crate.operation.delete;
 
 import com.google.common.base.Optional;
 import com.google.common.collect.ImmutableList;
-import io.crate.Constants;
+import com.google.common.util.concurrent.FutureCallback;
+import com.google.common.util.concurrent.Futures;
 import io.crate.operation.collect.DelegatingLuceneCollector;
 import io.crate.operation.reference.doc.lucene.CollectorContext;
 import io.crate.operation.reference.doc.lucene.IdCollectorExpression;
@@ -31,15 +32,14 @@ import io.crate.operation.reference.doc.lucene.LuceneCollectorExpression;
 import org.apache.lucene.index.AtomicReaderContext;
 import org.apache.lucene.search.Scorer;
 import org.elasticsearch.action.ActionListener;
-import org.elasticsearch.action.delete.DeleteRequest;
-import org.elasticsearch.action.delete.DeleteResponse;
-import org.elasticsearch.action.delete.TransportDeleteAction;
+import org.elasticsearch.action.bulk.SymbolBasedBulkShardProcessor;
 import org.elasticsearch.common.logging.ESLogger;
 import org.elasticsearch.common.logging.Loggers;
 import org.elasticsearch.common.lucene.BytesRefs;
 import org.elasticsearch.index.shard.ShardId;
 
 import javax.annotation.Nullable;
+import java.util.BitSet;
 import java.util.List;
 
 public class DeleteCollectorDelegate implements DelegatingLuceneCollector.LuceneCollectorDelegate {
@@ -47,23 +47,22 @@ public class DeleteCollectorDelegate implements DelegatingLuceneCollector.Lucene
     private static final ESLogger LOGGER = Loggers.getLogger(DeleteCollectorDelegate.class);
     private final List<LuceneCollectorExpression<?>> collectorExpressions;
     private final ActionListener<Long> shardResultListener;
-    private final TransportDeleteAction transportDeleteAction;
+    private final SymbolBasedBulkShardProcessor<BulkDeleteRequest, BulkDeleteResponse> bulkShardProcessor;
     private final ShardId shardId;
-
-    private long deleteCount = 0L;
 
     public DeleteCollectorDelegate(ShardId shardId,
                                    ActionListener<Long> shardResultListener,
-                                   TransportDeleteAction transportDeleteAction,
+                                   SymbolBasedBulkShardProcessor<BulkDeleteRequest, BulkDeleteResponse> bulkShardProcessor,
                                    Optional<LuceneCollectorExpression<?>> routingColumnExpression) {
         this.shardResultListener = shardResultListener;
-        this.transportDeleteAction = transportDeleteAction;
+        this.bulkShardProcessor = bulkShardProcessor;
         this.shardId = shardId;
-
+        IdCollectorExpression idCollectorExpression = new IdCollectorExpression();
         if (routingColumnExpression.isPresent()) {
-            this.collectorExpressions = ImmutableList.of(new IdCollectorExpression(), routingColumnExpression.get());
+
+            this.collectorExpressions = ImmutableList.of(idCollectorExpression, routingColumnExpression.get());
         } else {
-            this.collectorExpressions = ImmutableList.<LuceneCollectorExpression<?>>of(new IdCollectorExpression());
+            this.collectorExpressions = ImmutableList.<LuceneCollectorExpression<?>>of(idCollectorExpression);
         }
     }
 
@@ -92,11 +91,7 @@ public class DeleteCollectorDelegate implements DelegatingLuceneCollector.Lucene
             routing = BytesRefs.toString(collectorExpressions.get(1).value());
         }
         try {
-            // TODO: use bulkshardprocessor
-            DeleteResponse response = transportDeleteAction.execute(deleteRequest(id, routing)).actionGet();
-            if (response.isFound()) {
-                deleteCount++;
-            }
+            bulkShardProcessor.add(shardId.getIndex(), id, null, null, routing, null);
         } catch (Throwable t) {
             LOGGER.debug("error deleting document with docId {} on shard {}", t, doc, shardId);
             throw t;
@@ -104,17 +99,9 @@ public class DeleteCollectorDelegate implements DelegatingLuceneCollector.Lucene
         return true;
     }
 
-    private DeleteRequest deleteRequest(String id, @Nullable String routing) {
-        return new DeleteRequest()
-                .id(id)
-                .index(shardId.getIndex())
-                .routing(routing)
-                .refresh(false)
-                .type(Constants.DEFAULT_MAPPING_TYPE);
-    }
-
     @Override
     public void onError(Throwable t) {
+        bulkShardProcessor.close();
         shardResultListener.onFailure(t);
     }
 
@@ -127,6 +114,17 @@ public class DeleteCollectorDelegate implements DelegatingLuceneCollector.Lucene
 
     @Override
     public void onCollectFinished() {
-        shardResultListener.onResponse(deleteCount);
+        Futures.addCallback(bulkShardProcessor.result(), new FutureCallback<BitSet>() {
+            @Override
+            public void onSuccess(@Nullable BitSet result) {
+                assert result != null : "[delete] returned bitset is null";
+                shardResultListener.onResponse((long)result.cardinality());
+            }
+
+            @Override
+            public void onFailure(Throwable t) {
+                shardResultListener.onFailure(t);
+            }
+        });
     }
 }

@@ -21,6 +21,7 @@
 
 package io.crate.planner.node;
 
+import io.crate.planner.node.dml.DeleteByQueryNode;
 import io.crate.planner.node.dql.CollectNode;
 import io.crate.planner.node.dql.CountNode;
 import io.crate.planner.node.dql.FileUriCollectNode;
@@ -43,6 +44,7 @@ public interface ExecutionNode extends Streamable {
     enum Type {
         COLLECT(CollectNode.FACTORY),
         COUNT(CountNode.FACTORY),
+        DELETE_BY_QUERY(DeleteByQueryNode.FACTORY),
         FILE_URI_COLLECT(FileUriCollectNode.FACTORY),
         MERGE(MergeNode.FACTORY);
 
