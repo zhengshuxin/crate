@@ -392,9 +392,8 @@ public class PlannerTest extends CrateUnitTest {
 
     @Test
     public void testMultiDeletePlan() throws Exception {
-        IterablePlan plan = (IterablePlan) plan("delete from users where id in (1, 2)");
-        Iterator<PlanNode> iterator = plan.iterator();
-        assertThat(iterator.next(), instanceOf(ESDeleteByQueryNode.class));
+        Plan plan = plan("delete from users where id in (1, 2)");
+        assertThat(plan, instanceOf(DeletePlan.class));
     }
 
     @Test

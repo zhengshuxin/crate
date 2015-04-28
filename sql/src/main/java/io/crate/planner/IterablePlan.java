@@ -24,18 +24,22 @@ package io.crate.planner;
 import com.google.common.collect.Lists;
 import io.crate.planner.node.PlanNode;
 
-import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
 
 /**
  * A plan which describes its nodes as an iteration.
  */
 public class IterablePlan implements Iterable<PlanNode>, Plan {
 
-    private ArrayList<PlanNode> nodes;
+    private List<PlanNode> nodes;
 
     public IterablePlan(PlanNode... nodes) {
         this.nodes = Lists.newArrayList(nodes);
+    }
+
+    public IterablePlan(List<PlanNode> nodeList) {
+        this.nodes = nodeList;
     }
 
     public void add(PlanNode node) {

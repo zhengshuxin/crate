@@ -6,7 +6,7 @@
  * you may not use this file except in compliance with the License.  You may
  * obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -19,38 +19,36 @@
  * software solely pursuant to the terms of the relevant commercial agreement.
  */
 
-package io.crate.planner.node.dql;
+package io.crate.planner.node.dml;
 
+import io.crate.planner.Plan;
 import io.crate.planner.PlanVisitor;
 import io.crate.planner.UnsupportedPlannedAnalyzedRelationPlan;
+import io.crate.planner.node.dql.DQLPlanNode;
 import io.crate.planner.projection.Projection;
 
-public class CountPlan extends UnsupportedPlannedAnalyzedRelationPlan {
+import java.util.List;
 
-    private final CountNode countNode;
-    private final MergeNode mergeNode;
+public class BulkDeletePlan extends UnsupportedPlannedAnalyzedRelationPlan {
 
-    public CountPlan(CountNode countNode, MergeNode mergeNode) {
-        this.countNode = countNode;
-        this.mergeNode = mergeNode;
+    private List<Plan> childPlans;
+
+    public BulkDeletePlan(List<Plan> childPlans) {
+        this.childPlans = childPlans;
     }
 
-    public CountNode countNode() {
-        return countNode;
-    }
-
-    public MergeNode mergeNode() {
-        return mergeNode;
+    public List<Plan> childPlans() {
+        return childPlans;
     }
 
     @Override
     public <C, R> R accept(PlanVisitor<C, R> visitor, C context) {
-        return visitor.visitCountPlan(this, context);
+        return visitor.visitBulkDeletePlan(this, context);
     }
 
     @Override
     public void addProjection(Projection projection) {
-        mergeNode.addProjection(projection);
+        throw new UnsupportedOperationException("Cannot add projection to a BulkDeletePlan");
     }
 
     @Override
@@ -60,6 +58,6 @@ public class CountPlan extends UnsupportedPlannedAnalyzedRelationPlan {
 
     @Override
     public DQLPlanNode resultNode() {
-        return mergeNode;
+        throw new UnsupportedOperationException("BulkDeletePlan doesn't have a resultNode");
     }
 }

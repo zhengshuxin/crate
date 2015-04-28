@@ -48,6 +48,7 @@ import io.crate.planner.node.ExecutionNode;
 import io.crate.planner.node.ExecutionNodeVisitor;
 import io.crate.planner.node.ExecutionNodes;
 import io.crate.planner.node.StreamerVisitor;
+import io.crate.planner.node.dml.DeleteByQueryNode;
 import io.crate.planner.node.dql.CollectNode;
 import io.crate.planner.node.dql.CountNode;
 import io.crate.planner.node.dql.MergeNode;
@@ -208,6 +209,28 @@ public class ContextPreparer {
                     }
                 }, MoreExecutors.directExecutor());
             }
+            return null;
+        }
+
+        @Override
+        public Void visitDeleteByQueryNode(final DeleteByQueryNode node, PreparerContext context) {
+            final SingleBucketBuilder singleBucketBuilder = new SingleBucketBuilder(new Streamer[]{DataTypes.LONG});
+            final JobCollectContext jobCollectContext = new JobCollectContext(
+                    context.jobId,
+                    context.ramAccountingContext,
+                    singleBucketBuilder);
+            context.contextBuilder.addCollectContext(node.executionNodeId(), jobCollectContext);
+            context.directResultFuture = singleBucketBuilder.result();
+
+            singleBucketBuilder.result().addListener(new Runnable() {
+                @Override
+                public void run() {
+                    LOGGER.trace("Closing JobCollectContext {}/{} because result is ready",
+                            node.jobId().get(), node.executionNodeId());
+
+                    jobCollectContext.close();
+                }
+            }, MoreExecutors.directExecutor());
             return null;
         }
     }

@@ -48,7 +48,7 @@ public class ExecutionNodeVisitor<C, R> {
         return visitExecutionNode(countNode, context);
     }
 
-    public R visitDeleteByQueryNode(DeleteByQueryNode deleteByQueryNode, C context) {
-        return visitExecutionNode(deleteByQueryNode, context);
+    public R visitDeleteByQueryNode(DeleteByQueryNode node, C context) {
+        return visitExecutionNode(node, context);
     }
 }

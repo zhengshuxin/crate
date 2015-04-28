@@ -42,6 +42,7 @@ import org.elasticsearch.common.logging.ESLogger;
 import org.elasticsearch.common.logging.Loggers;
 import org.elasticsearch.index.IndexShardMissingException;
 import org.elasticsearch.index.service.IndexService;
+import org.elasticsearch.index.shard.service.IndexShard;
 import org.elasticsearch.indices.IndexMissingException;
 import org.elasticsearch.indices.IndicesService;
 import org.elasticsearch.threadpool.ThreadPool;
@@ -100,41 +101,41 @@ public class DeleteOperationImpl implements DeleteOperation {
 
         ActionListener<Long> shardListener = new DeleteShardListener(numShards, listener);
 
-        for (Map.Entry<String, Map<String, List<Integer>>> nodeEntry : locations.entrySet()) {
-            if (nodeEntry.getKey().equals(localNodeId)) {
-                Map<String, List<Integer>> shardIdMap = nodeEntry.getValue();
-                for (Map.Entry<String, List<Integer>> entry : shardIdMap.entrySet()) {
-                    String indexName = entry.getKey();
-                    IndexService indexService;
-                    try {
-                        indexService = indicesService.indexServiceSafe(indexName);
-                    } catch (IndexMissingException e) {
-                        throw new TableUnknownException(entry.getKey(), e);
-                    }
+        Map<String, List<Integer>> indexShardMap = locations.get(localNodeId);
+        assert indexShardMap != null : "routing must contain indies/shards for node";
 
-                    for (Integer shardId : entry.getValue()) {
-                        Injector shardInjector;
-                        try {
-                            shardInjector = indexService.shardInjectorSafe(shardId);
-                            ShardCollectService shardCollectService = shardInjector.getInstance(ShardCollectService.class);
-                            CrateCollector collector = shardCollectService.getDeleteCollector(
-                                    deleteNode,
-                                    jobCollectContext,
-                                    jobSearchContextId,
-                                    shardListener
-                            );
-                            shardCollectors.add(collector);
-                        } catch (IndexShardMissingException e) {
-                            throw new UnhandledServerException(
-                                    String.format(Locale.ENGLISH, "unknown shard id %d on index '%s'",
-                                            shardId, entry.getKey()), e);
-                        } catch (Exception e) {
-                            LOGGER.error("Error while getting collector", e);
-                            throw new UnhandledServerException(e);
-                        }
+        for (Map.Entry<String, List<Integer>> entry : indexShardMap.entrySet()) {
+            String indexName = entry.getKey();
+            IndexService indexService;
+            try {
+                indexService = indicesService.indexServiceSafe(indexName);
+            } catch (IndexMissingException e) {
+                throw new TableUnknownException(entry.getKey(), e);
+            }
 
-                    }
+            for (Integer shardId : entry.getValue()) {
+                IndexShard indexShard = indexService.shardSafe(shardId);
+                jobCollectContext.registerJobContextId(indexShard.shardId(), jobSearchContextId);
+                Injector shardInjector;
+                try {
+                    shardInjector = indexService.shardInjectorSafe(shardId);
+                    ShardCollectService shardCollectService = shardInjector.getInstance(ShardCollectService.class);
+                    CrateCollector collector = shardCollectService.getDeleteCollector(
+                            deleteNode,
+                            jobCollectContext,
+                            jobSearchContextId,
+                            shardListener
+                    );
+                    shardCollectors.add(collector);
+                } catch (IndexShardMissingException e) {
+                    throw new UnhandledServerException(
+                            String.format(Locale.ENGLISH, "unknown shard id %d on index '%s'",
+                                    shardId, entry.getKey()), e);
+                } catch (Exception e) {
+                    LOGGER.error("Error while getting collector", e);
+                    throw new UnhandledServerException(e);
                 }
+
             }
         }
         runDeleteThreaded(shardCollectors, ramAccountingContext);

@@ -21,17 +21,21 @@
 
 package io.crate.action.job;
 
+import io.crate.core.collections.Row1;
 import io.crate.jobs.JobExecutionContext;
 import io.crate.operation.RowDownstreamHandle;
 import io.crate.operation.RowUpstream;
 import io.crate.operation.collect.JobCollectContext;
 import io.crate.operation.collect.MapSideDataCollectOperation;
 import io.crate.operation.collect.StatsTables;
+import io.crate.operation.delete.DeleteOperation;
 import io.crate.planner.node.ExecutionNode;
 import io.crate.planner.node.ExecutionNodeVisitor;
+import io.crate.planner.node.dml.DeleteByQueryNode;
 import io.crate.planner.node.dql.CollectNode;
 import io.crate.planner.node.dql.CountNode;
 import io.crate.planner.node.dql.MergeNode;
+import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.inject.Singleton;
 import org.elasticsearch.threadpool.ThreadPool;
@@ -45,15 +49,18 @@ public class ExecutionNodeOperationStarter implements RowUpstream {
 
     private final ThreadPool threadPool;
     private final StatsTables statsTables;
+    private DeleteOperation deleteOperation;
     private final MapSideDataCollectOperation mapSideDataCollectOperation;
     private final InnerStarter innerStarter;
 
     @Inject
     public ExecutionNodeOperationStarter(ThreadPool threadPool,
                                          StatsTables statsTables,
+                                         DeleteOperation deleteOperation,
                                          MapSideDataCollectOperation mapSideDataCollectOperation) {
         this.threadPool = threadPool;
         this.statsTables = statsTables;
+        this.deleteOperation = deleteOperation;
         this.mapSideDataCollectOperation = mapSideDataCollectOperation;
         this.innerStarter = new InnerStarter();
     }
@@ -84,6 +91,26 @@ public class ExecutionNodeOperationStarter implements RowUpstream {
         @Override
         public Void visitCountNode(CountNode countNode, JobExecutionContext context) {
             // nothing to do; count doesn't use a context (yet) and is started directly in the ContextPreparer
+            return null;
+        }
+
+        @Override
+        public Void visitDeleteByQueryNode(DeleteByQueryNode node, JobExecutionContext context) {
+            final JobCollectContext collectContext = context.getCollectContext(node.executionNodeId());
+            final RowDownstreamHandle rowDownstreamHandle =
+                    collectContext.rowDownstream().registerUpstream(ExecutionNodeOperationStarter.this);
+            deleteOperation.delete(node, collectContext.ramAccountingContext(), new ActionListener<Long>() {
+                @Override
+                public void onResponse(Long aLong) {
+                    rowDownstreamHandle.setNextRow(new Row1(aLong));
+                    rowDownstreamHandle.finish();
+                }
+
+                @Override
+                public void onFailure(Throwable e) {
+                    rowDownstreamHandle.fail(e);
+                }
+            });
             return null;
         }
 

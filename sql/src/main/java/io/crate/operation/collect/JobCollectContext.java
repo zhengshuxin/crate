@@ -80,6 +80,7 @@ public class JobCollectContext implements ExecutionSubContext {
     }
 
     public void registerJobContextId(ShardId shardId, int jobContextId) {
+        System.out.println("register " + shardId.id() + " - " + jobContextId);
         if (jobContextIdMap.putIfAbsent(jobContextId, shardId) == null) {
             List<Integer> oldShardContextIds;
             List<Integer> shardContextIds = new ArrayList<>();
@@ -102,7 +103,11 @@ public class JobCollectContext implements ExecutionSubContext {
     public CrateLuceneCollector createCollectorAndContext(IndexShard indexShard,
                                                           int jobSearchContextId,
                                                           Function<Engine.Searcher, CrateLuceneCollector> createCollectorFunction) throws Exception {
-        assert shardsMap.containsKey(indexShard.shardId()) : "all jobSearchContextId's must be registered first using registerJobContextId(..)";
+        try {
+            assert shardsMap.containsKey(indexShard.shardId()) : "all jobSearchContextId's must be registered first using registerJobContextId(..)";
+        } catch (AssertionError e) {
+            e.printStackTrace();
+        }
         CrateLuceneCollector docCollector;
         synchronized (lock) {
             docCollector = activeCollectors.get(jobSearchContextId);

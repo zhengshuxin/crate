@@ -35,13 +35,9 @@ import io.crate.planner.node.NoopPlannedAnalyzedRelation;
 import io.crate.planner.node.dql.CountNode;
 import io.crate.planner.node.dql.CountPlan;
 import io.crate.planner.node.dql.MergeNode;
-import io.crate.planner.projection.Projection;
 import io.crate.planner.symbol.Function;
 import io.crate.planner.symbol.Symbol;
-import io.crate.types.DataType;
-import io.crate.types.DataTypes;
 
-import java.util.Collections;
 import java.util.List;
 
 import static com.google.common.base.MoreObjects.firstNonNull;
@@ -88,13 +84,7 @@ public class CountConsumer implements Consumer {
             Routing routing = tableInfo.getRouting(querySpec.where(), null);
             Planner.Context plannerContext = context.plannerContext();
             CountNode countNode = new CountNode(plannerContext.nextExecutionNodeId(), routing, querySpec.where());
-            MergeNode mergeNode = new MergeNode(
-                    plannerContext.nextExecutionNodeId(),
-                    "count-merge",
-                    countNode.executionNodes().size());
-            mergeNode.inputTypes(Collections.<DataType>singletonList(DataTypes.LONG));
-            mergeNode.projections(Collections.<Projection>singletonList(
-                    CountAggregation.PARTIAL_COUNT_AGGREGATION_PROJECTION));
+            MergeNode mergeNode = MergeNode.mergeCount(plannerContext.nextExecutionNodeId(), "count-merge", countNode);
             return new CountPlan(countNode, mergeNode);
         }
 
