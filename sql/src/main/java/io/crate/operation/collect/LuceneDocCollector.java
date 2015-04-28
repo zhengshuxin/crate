@@ -51,7 +51,7 @@ import java.util.List;
 /**
  * collect documents from ES shard, a lucene index
  */
-public class LuceneDocCollector extends Collector implements CrateCollector, RowUpstream {
+public class LuceneDocCollector extends Collector implements CrateLuceneCollector, RowUpstream {
 
     public static class CollectorFieldsVisitor extends FieldsVisitor {
 
@@ -212,7 +212,7 @@ public class LuceneDocCollector extends Collector implements CrateCollector, Row
         // do the lucene search
         boolean failed = false;
         try {
-            if( orderBy != null) {
+            if (orderBy != null) {
                 Integer batchSize = limit == null ? pageSize : Math.min(pageSize, limit);
                 Sort sort = CrateSearchService.generateLuceneSort(searchContext, orderBy, inputSymbolVisitor);
                 TopFieldDocs topFieldDocs = searchContext.searcher().search(query, batchSize, sort);

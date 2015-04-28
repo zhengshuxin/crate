@@ -45,7 +45,7 @@ public class JobCollectContext implements ExecutionSubContext {
     private final UUID id;
     private final RamAccountingContext ramAccountingContext;
     private final RowDownstream downstream;
-    private final Map<Integer, LuceneDocCollector> activeCollectors = new HashMap<>();
+    private final Map<Integer, CrateLuceneCollector> activeCollectors = new HashMap<>();
     private final ConcurrentMap<ShardId, List<Integer>> shardsMap = new ConcurrentHashMap<>();
     private final ConcurrentMap<Integer, ShardId> jobContextIdMap = new ConcurrentHashMap<>();
     private final ConcurrentMap<ShardId, Integer> engineSearchersRefCount = new ConcurrentHashMap<>();
@@ -99,11 +99,11 @@ public class JobCollectContext implements ExecutionSubContext {
         }
     }
 
-    public LuceneDocCollector createCollectorAndContext(IndexShard indexShard,
-                                            int jobSearchContextId,
-                                            Function<Engine.Searcher, LuceneDocCollector> createCollectorFunction) throws Exception {
+    public CrateLuceneCollector createCollectorAndContext(IndexShard indexShard,
+                                                          int jobSearchContextId,
+                                                          Function<Engine.Searcher, CrateLuceneCollector> createCollectorFunction) throws Exception {
         assert shardsMap.containsKey(indexShard.shardId()) : "all jobSearchContextId's must be registered first using registerJobContextId(..)";
-        LuceneDocCollector docCollector;
+        CrateLuceneCollector docCollector;
         synchronized (lock) {
             docCollector = activeCollectors.get(jobSearchContextId);
             if (docCollector == null) {
@@ -128,7 +128,7 @@ public class JobCollectContext implements ExecutionSubContext {
     }
 
     @Nullable
-    public LuceneDocCollector findCollector(int jobSearchContextId) {
+    public CrateLuceneCollector findCollector(int jobSearchContextId) {
         return activeCollectors.get(jobSearchContextId);
     }
     public void closeContext(int jobSearchContextId) {
@@ -141,7 +141,7 @@ public class JobCollectContext implements ExecutionSubContext {
                     jobSearchContextId, jobContextIdMap.get(jobSearchContextId), id);
         }
         synchronized (lock) {
-            LuceneDocCollector docCollector = activeCollectors.get(jobSearchContextId);
+            CrateLuceneCollector docCollector = activeCollectors.get(jobSearchContextId);
             if (docCollector != null) {
                 if (docCollector.searchContext().isEngineSearcherShared()) {
                     ShardId shardId = jobContextIdMap.get(jobSearchContextId);
@@ -179,7 +179,7 @@ public class JobCollectContext implements ExecutionSubContext {
                 Iterator<Integer> it = jobSearchContextIds.iterator();
                 while (searchContext == null && it.hasNext()) {
                     jobSearchContextId = it.next();
-                    LuceneDocCollector docCollector = activeCollectors.get(jobSearchContextId);
+                    CrateLuceneCollector docCollector = activeCollectors.get(jobSearchContextId);
                     if (docCollector != null) {
                         searchContext = docCollector.searchContext();
                     }

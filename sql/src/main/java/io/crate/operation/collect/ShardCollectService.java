@@ -39,14 +39,17 @@ import io.crate.operation.ImplementationSymbolVisitor;
 import io.crate.operation.Input;
 import io.crate.operation.RowDownstream;
 import io.crate.operation.collect.blobs.BlobDocCollector;
+import io.crate.operation.delete.DeleteCollectorDelegate;
 import io.crate.operation.projectors.ProjectionToProjectorVisitor;
 import io.crate.operation.reference.DocLevelReferenceResolver;
 import io.crate.operation.reference.doc.blob.BlobReferenceResolver;
 import io.crate.operation.reference.doc.lucene.LuceneDocLevelReferenceResolver;
 import io.crate.planner.RowGranularity;
+import io.crate.planner.node.dml.DeleteByQueryNode;
 import io.crate.planner.node.dql.CollectNode;
 import io.crate.planner.symbol.Literal;
 import org.apache.lucene.search.Filter;
+import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.bulk.BulkRetryCoordinatorPool;
 import org.elasticsearch.cache.recycler.CacheRecycler;
 import org.elasticsearch.cache.recycler.PageCacheRecycler;
@@ -85,6 +88,7 @@ public class ShardCollectService {
     private final ProjectionToProjectorVisitor projectorVisitor;
     private final boolean isBlobShard;
     private final BlobIndices blobIndices;
+    private final TransportActionProvider transportActionProvider;
 
     @Inject
     public ShardCollectService(ThreadPool threadPool,
@@ -141,6 +145,70 @@ public class ShardCollectService {
                 shardImplementationSymbolVisitor,
                 shardNormalizer,
                 shardId
+        );
+        this.transportActionProvider = transportActionProvider;
+    }
+
+    public CrateCollector getDeleteCollector(final DeleteByQueryNode deleteByQueryNode,
+                                       final JobCollectContext jobCollectContext,
+                                       final int jobSearchContextId,
+                                       final ActionListener<Long> shardResultListener) throws Exception {
+        final SearchShardTarget searchShardTarget = new SearchShardTarget(
+                clusterService.state().nodes().localNodeId(),
+                shardId.getIndex(),
+                shardId.id());
+        final IndexShard indexShard = indexService.shardSafe(shardId.id());
+
+        return jobCollectContext.createCollectorAndContext(
+                indexShard,
+                jobSearchContextId,
+                new Function<Engine.Searcher, CrateLuceneCollector>() {
+
+                    @Nullable
+                    @Override
+                    public CrateLuceneCollector apply(Engine.Searcher engineSearcher) {
+                        CrateSearchContext localContext = null;
+                        try {
+                            localContext = new CrateSearchContext(
+                                    jobSearchContextId,
+                                    System.currentTimeMillis(),
+                                    searchShardTarget,
+                                    engineSearcher,
+                                    indexService,
+                                    indexShard,
+                                    scriptService,
+                                    cacheRecycler,
+                                    pageCacheRecycler,
+                                    bigArrays,
+                                    threadPool.estimatedTimeInMillisCounter(),
+                                    Optional.<Scroll>absent(),
+                                    CollectContextService.DEFAULT_KEEP_ALIVE
+                            );
+                            LuceneQueryBuilder.Context ctx = luceneQueryBuilder.convert(
+                                    deleteByQueryNode.whereClause(), localContext, indexService.cache());
+                            localContext.parsedQuery(new ParsedQuery(ctx.query(), ImmutableMap.<String, Filter>of()));
+                            Float minScore = ctx.minScore();
+                            if (minScore != null) {
+                                localContext.minimumScore(minScore);
+                            }
+                            return new DelegatingLuceneCollector(
+                                    jobCollectContext,
+                                    localContext,
+                                    jobSearchContextId,
+                                    false,
+                                    new DeleteCollectorDelegate(
+                                            shardId,
+                                            shardResultListener,
+                                            transportActionProvider.transportDeleteAction())
+                            );
+                        } catch (Throwable t) {
+                            if (localContext != null) {
+                                localContext.close();
+                            }
+                            throw Throwables.propagate(t);
+                        }
+                    }
+                }
         );
     }
 
@@ -208,11 +276,11 @@ public class ShardCollectService {
         return jobCollectContext.createCollectorAndContext(
                 indexShard,
                 jobSearchContextId,
-                new Function<Engine.Searcher, LuceneDocCollector>() {
+                new Function<Engine.Searcher, CrateLuceneCollector>() {
 
                     @Nullable
                     @Override
-                    public LuceneDocCollector apply(Engine.Searcher engineSearcher) {
+                    public CrateLuceneCollector apply(Engine.Searcher engineSearcher) {
                         CrateSearchContext localContext = null;
                         try {
                             localContext = new CrateSearchContext(
