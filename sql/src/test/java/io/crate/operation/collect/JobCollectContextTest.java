@@ -66,11 +66,11 @@ public class JobCollectContextTest extends CrateUnitTest {
     private static final RamAccountingContext RAM_ACCOUNTING_CONTEXT =
             new RamAccountingContext("dummy", new NoopCircuitBreaker(CircuitBreaker.Name.FIELDDATA));
 
-    static final Function<Engine.Searcher, LuceneDocCollector> CONTEXT_FUNCTION =
-            new Function<Engine.Searcher, LuceneDocCollector>() {
+    static final Function<Engine.Searcher, CrateLuceneCollector> CONTEXT_FUNCTION =
+            new Function<Engine.Searcher, CrateLuceneCollector>() {
                 @Nullable
                 @Override
-                public LuceneDocCollector apply(Engine.Searcher input) {
+                public CrateLuceneCollector apply(Engine.Searcher input) {
                     CrateSearchContext searchContext = mock(CrateSearchContext.class);
                     when(searchContext.engineSearcher()).thenReturn(input);
                     when(searchContext.isEngineSearcherShared()).thenCallRealMethod();
@@ -140,12 +140,12 @@ public class JobCollectContextTest extends CrateUnitTest {
         int jobSearchContextId = 1;
         jobCollectContext.registerJobContextId(shardId, jobSearchContextId);
 
-        LuceneDocCollector collector1 = jobCollectContext.createCollectorAndContext(indexShard, jobSearchContextId, CONTEXT_FUNCTION);
+        CrateLuceneCollector collector1 = jobCollectContext.createCollectorAndContext(indexShard, jobSearchContextId, CONTEXT_FUNCTION);
         assertThat(collector1, instanceOf(LuceneDocCollector.class));
         assertThat(collector1.searchContext(), instanceOf(CrateSearchContext.class));
 
         // calling again with same arguments results in same context
-        LuceneDocCollector collector2 = jobCollectContext.createCollectorAndContext(indexShard, jobSearchContextId, CONTEXT_FUNCTION);
+        CrateLuceneCollector collector2 = jobCollectContext.createCollectorAndContext(indexShard, jobSearchContextId, CONTEXT_FUNCTION);
         assertEquals(collector1, collector2);
         assertEquals(collector1.searchContext(), collector2.searchContext());
         assertThat(((Map)activeCollectors.get(jobCollectContext)).size(), is(1));
@@ -162,8 +162,8 @@ public class JobCollectContextTest extends CrateUnitTest {
         // no context created, expect null
         assertNull(jobCollectContext.findCollector(1));
 
-        LuceneDocCollector collector1 = jobCollectContext.createCollectorAndContext(indexShard, jobSearchContextId, CONTEXT_FUNCTION);
-        LuceneDocCollector collector2 = jobCollectContext.findCollector(jobSearchContextId);
+        CrateLuceneCollector collector1 = jobCollectContext.createCollectorAndContext(indexShard, jobSearchContextId, CONTEXT_FUNCTION);
+        CrateLuceneCollector collector2 = jobCollectContext.findCollector(jobSearchContextId);
         assertEquals(collector1, collector2);
         assertEquals(collector1.searchContext(), collector2.searchContext());
     }

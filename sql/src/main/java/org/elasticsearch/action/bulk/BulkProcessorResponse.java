@@ -26,7 +26,16 @@ import com.carrotsearch.hppc.IntArrayList;
 import java.util.List;
 
 public interface BulkProcessorResponse<T> {
+    /**
+     * a list of indices into the list returned by {@linkplain #responses()}
+     * marking those elements that are not null, i.e. returned succesfully.
+     */
     IntArrayList itemIndices();
 
+    /**
+     * a list of response items of exact the same length as the
+     * request elements that led to this response.
+     * With null values marking failed requests.
+     */
     List<T> responses();
 }
