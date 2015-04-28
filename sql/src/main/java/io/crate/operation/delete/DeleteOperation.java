@@ -21,12 +21,19 @@
 
 package io.crate.operation.delete;
 
+import com.google.common.util.concurrent.ListenableFuture;
 import io.crate.analyze.WhereClause;
 import org.elasticsearch.common.inject.ImplementedBy;
 
 import java.io.IOException;
+import java.util.Collection;
+import java.util.Map;
 
 @ImplementedBy(InternalDeleteOperation.class)
 public interface DeleteOperation {
+
+
+    ListenableFuture<Long> delete(Map<String, ? extends Collection<Integer>> indexShardMap,
+                                  WhereClause whereClause) throws IOException;
     long delete(String index, int shardId, WhereClause whereClause) throws IOException;
 }

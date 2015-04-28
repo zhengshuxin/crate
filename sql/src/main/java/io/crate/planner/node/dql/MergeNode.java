@@ -27,8 +27,11 @@ import com.google.common.base.MoreObjects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
+import io.crate.operation.aggregation.impl.CountAggregation;
+import io.crate.planner.node.ExecutionNode;
 import io.crate.planner.node.ExecutionNodeVisitor;
 import io.crate.planner.node.PlanNodeVisitor;
+import io.crate.planner.projection.Projection;
 import io.crate.types.DataType;
 import io.crate.types.DataTypes;
 import org.elasticsearch.common.io.stream.StreamInput;
@@ -335,5 +338,16 @@ public class MergeNode extends AbstractDQLPlanNode {
 
     public void downstreamExecutionNodeId(int downstreamExecutionNodeId) {
         this.downstreamExecutionNodeId = downstreamExecutionNodeId;
+    }
+
+    public static MergeNode mergeCount(int executionNodeId, String name, ExecutionNode prevExecutionNode) {
+        MergeNode mergeNode = new MergeNode(
+                executionNodeId,
+                name,
+                prevExecutionNode.executionNodes().size()
+        );
+        mergeNode.inputTypes(ImmutableList.<DataType>of(DataTypes.LONG));
+        mergeNode.projections(ImmutableList.<Projection>of(CountAggregation.PARTIAL_COUNT_AGGREGATION_PROJECTION));
+        return mergeNode;
     }
 }

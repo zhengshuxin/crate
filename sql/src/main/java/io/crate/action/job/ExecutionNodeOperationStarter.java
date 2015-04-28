@@ -30,6 +30,7 @@ import io.crate.operation.collect.MapSideDataCollectOperation;
 import io.crate.operation.collect.StatsTables;
 import io.crate.planner.node.ExecutionNode;
 import io.crate.planner.node.ExecutionNodeVisitor;
+import io.crate.planner.node.dml.DeleteByQueryNode;
 import io.crate.planner.node.dql.CollectNode;
 import io.crate.planner.node.dql.CountNode;
 import io.crate.planner.node.dql.MergeNode;
@@ -86,6 +87,12 @@ public class ExecutionNodeOperationStarter implements RowUpstream {
         public Void visitCountNode(CountNode countNode, JobExecutionContext context) {
             CountContext countContext = context.getSubContext(countNode.executionNodeId());
             countContext.start();
+            return null;
+        }
+
+        @Override
+        public Void visitDeleteByQueryNode(DeleteByQueryNode node, JobExecutionContext context) {
+            // nothing to do; delete doesn't use a context (yet) and is started directly in the ContextPreparer
             return null;
         }
 

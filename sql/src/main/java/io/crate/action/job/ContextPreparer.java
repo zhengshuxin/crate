@@ -22,6 +22,7 @@
 package io.crate.action.job;
 
 import com.google.common.base.Optional;
+import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.MoreExecutors;
@@ -29,23 +30,27 @@ import io.crate.Streamer;
 import io.crate.breaker.CrateCircuitBreakerService;
 import io.crate.breaker.RamAccountingContext;
 import io.crate.core.collections.Bucket;
+import io.crate.core.collections.Row1;
 import io.crate.executor.callbacks.OperationFinishedStatsTablesCallback;
 import io.crate.executor.transport.distributed.SingleBucketBuilder;
 import io.crate.jobs.CountContext;
 import io.crate.jobs.JobExecutionContext;
 import io.crate.jobs.PageDownstreamContext;
+import io.crate.metadata.Routing;
 import io.crate.operation.PageDownstream;
 import io.crate.operation.PageDownstreamFactory;
 import io.crate.operation.collect.JobCollectContext;
 import io.crate.operation.collect.MapSideDataCollectOperation;
 import io.crate.operation.collect.StatsTables;
 import io.crate.operation.count.CountOperation;
+import io.crate.operation.delete.DeleteOperation;
 import io.crate.operation.projectors.ResultProvider;
 import io.crate.operation.projectors.ResultProviderFactory;
 import io.crate.planner.node.ExecutionNode;
 import io.crate.planner.node.ExecutionNodeVisitor;
 import io.crate.planner.node.ExecutionNodes;
 import io.crate.planner.node.StreamerVisitor;
+import io.crate.planner.node.dml.DeleteByQueryNode;
 import io.crate.planner.node.dql.CollectNode;
 import io.crate.planner.node.dql.CountNode;
 import io.crate.planner.node.dql.MergeNode;
@@ -58,7 +63,9 @@ import org.elasticsearch.common.logging.ESLogger;
 import org.elasticsearch.common.logging.Loggers;
 import org.elasticsearch.threadpool.ThreadPool;
 
+import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -71,6 +78,7 @@ public class ContextPreparer {
     private final MapSideDataCollectOperation collectOperationHandler;
     private ClusterService clusterService;
     private CountOperation countOperation;
+    private DeleteOperation deleteOperation;
     private final CircuitBreaker circuitBreaker;
     private final StatsTables statsTables;
     private final ThreadPool threadPool;
@@ -86,12 +94,14 @@ public class ContextPreparer {
                            StatsTables statsTables,
                            ThreadPool threadPool,
                            CountOperation countOperation,
+                           DeleteOperation deleteOperation,
                            PageDownstreamFactory pageDownstreamFactory,
                            ResultProviderFactory resultProviderFactory,
                            StreamerVisitor streamerVisitor) {
         this.collectOperationHandler = collectOperationHandler;
         this.clusterService = clusterService;
         this.countOperation = countOperation;
+        this.deleteOperation = deleteOperation;
         circuitBreaker = breakerService.getBreaker(CrateCircuitBreakerService.QUERY_BREAKER);
         this.statsTables = statsTables;
         this.threadPool = threadPool;
@@ -129,17 +139,22 @@ public class ContextPreparer {
 
     private class InnerPreparer extends ExecutionNodeVisitor<PreparerContext, Void> {
 
-        @Override
-        public Void visitCountNode(CountNode countNode, PreparerContext context) {
-            Map<String, Map<String, List<Integer>>> locations = countNode.routing().locations();
+        private Map<String, List<Integer>> getIndexShardMap(Routing routing) {
+            Map<String, Map<String, List<Integer>>> locations = routing.locations();
             if (locations == null) {
-                throw new IllegalArgumentException("locations are empty. Can't start count operation");
+                throw new IllegalArgumentException("locations are empty. Can't start operation");
             }
             String localNodeId = clusterService.localNode().id();
             Map<String, List<Integer>> indexShardMap = locations.get(localNodeId);
             if (indexShardMap == null) {
-                throw new IllegalArgumentException("The routing of the countNode doesn't contain the current nodeId");
+                throw new IllegalArgumentException("The routing of the executionNode doesn't contain the current nodeId");
             }
+            return indexShardMap;
+        }
+
+        @Override
+        public Void visitCountNode(CountNode countNode, PreparerContext context) {
+            Map<String, List<Integer>> indexShardMap = getIndexShardMap(countNode.routing());
 
             final SingleBucketBuilder singleBucketBuilder = new SingleBucketBuilder(new Streamer[]{DataTypes.LONG});
             CountContext countContext = new CountContext(
@@ -150,6 +165,34 @@ public class ContextPreparer {
             );
             context.directResultFuture = singleBucketBuilder.result();
             context.contextBuilder.addSubContext(countNode.executionNodeId(), countContext);
+            return null;
+        }
+
+        @Override
+        public Void visitDeleteByQueryNode(DeleteByQueryNode node, PreparerContext context) {
+            final SingleBucketBuilder singleBucketBuilder = new SingleBucketBuilder(new Streamer[]{DataTypes.LONG});
+            context.directResultFuture = singleBucketBuilder.result();
+
+            Map<String, List<Integer>> indexShardMap = getIndexShardMap(node.routing());
+
+            // TODO: add DeleteContext
+            try {
+                ListenableFuture<Long> deleteFuture = deleteOperation.delete(indexShardMap, node.whereClause());
+                Futures.addCallback(deleteFuture, new FutureCallback<Long>() {
+                    @Override
+                    public void onSuccess(@Nullable Long result) {
+                        singleBucketBuilder.setNextRow(new Row1(result));
+                        singleBucketBuilder.finish();
+                    }
+
+                    @Override
+                    public void onFailure(@Nonnull Throwable t) {
+                        singleBucketBuilder.fail(t);
+                    }
+                });
+            } catch (IOException e) {
+                singleBucketBuilder.fail(e);
+            }
             return null;
         }
 

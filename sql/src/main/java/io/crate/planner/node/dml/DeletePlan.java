@@ -6,7 +6,7 @@
  * you may not use this file except in compliance with the License.  You may
  * obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -19,39 +19,40 @@
  * software solely pursuant to the terms of the relevant commercial agreement.
  */
 
-package io.crate.planner.node.dql;
+package io.crate.planner.node.dml;
 
 import io.crate.planner.PlanAndPlannedAnalyzedRelation;
 import io.crate.planner.PlanVisitor;
+import io.crate.planner.node.dql.DQLPlanNode;
+import io.crate.planner.node.dql.MergeNode;
 import io.crate.planner.projection.Projection;
 
+public class DeletePlan extends PlanAndPlannedAnalyzedRelation {
 
-public class CountPlan extends PlanAndPlannedAnalyzedRelation {
+    private final DeleteByQueryNode deleteByQueryNode;
+    private final MergeNode localMerge;
 
-    private final CountNode countNode;
-    private final MergeNode mergeNode;
-
-    public CountPlan(CountNode countNode, MergeNode mergeNode) {
-        this.countNode = countNode;
-        this.mergeNode = mergeNode;
+    public DeletePlan(DeleteByQueryNode deleteByQueryNode, MergeNode localMerge) {
+        this.deleteByQueryNode = deleteByQueryNode;
+        this.localMerge = localMerge;
     }
 
-    public CountNode countNode() {
-        return countNode;
+    public DeleteByQueryNode deleteByQueryNode() {
+        return deleteByQueryNode;
     }
 
     public MergeNode mergeNode() {
-        return mergeNode;
+        return localMerge;
     }
 
     @Override
     public <C, R> R accept(PlanVisitor<C, R> visitor, C context) {
-        return visitor.visitCountPlan(this, context);
+        return visitor.visitDeletePlan(this, context);
     }
 
     @Override
     public void addProjection(Projection projection) {
-        mergeNode.addProjection(projection);
+        localMerge.addProjection(projection);
     }
 
     @Override
@@ -61,6 +62,6 @@ public class CountPlan extends PlanAndPlannedAnalyzedRelation {
 
     @Override
     public DQLPlanNode resultNode() {
-        return mergeNode;
+        return localMerge;
     }
 }

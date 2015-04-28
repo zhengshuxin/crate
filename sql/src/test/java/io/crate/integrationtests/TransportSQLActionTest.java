@@ -334,8 +334,9 @@ public class TransportSQLActionTest extends SQLTransportIntegrationTest {
         client().prepareIndex("test", "default", "id1").setSource("{}").execute().actionGet();
         refresh();
         execute("delete from test");
-        assertEquals(-1, response.rowCount());
+        assertEquals(1, response.rowCount());
         assertThat(response.duration(), greaterThanOrEqualTo(0L));
+        execute("refresh table test");
         execute("select \"_id\" from test");
         assertEquals(0, response.rowCount());
     }
@@ -1232,10 +1233,10 @@ public class TransportSQLActionTest extends SQLTransportIntegrationTest {
         refresh();
 
         execute("delete from quotes where id=1");
-        // no rowCount available for deleteByQuery requests
-        assertEquals(-1L, response.rowCount());
+        assertEquals(2, response.rowCount());
         refresh();
 
+        execute("refresh table quotes");
         execute("select quote from quotes where id=1");
         assertEquals(0L, response.rowCount());
     }
