@@ -42,6 +42,7 @@ import io.crate.operation.collect.HandlerSideDataCollectOperation;
 import io.crate.operation.collect.StatsTables;
 import io.crate.operation.projectors.ProjectionToProjectorVisitor;
 import io.crate.planner.*;
+import io.crate.planner.node.ExecutionNode;
 import io.crate.planner.node.PlanNode;
 import io.crate.planner.node.PlanNodeVisitor;
 import io.crate.planner.node.StreamerVisitor;
@@ -174,6 +175,42 @@ public class TransportExecutor implements Executor, TaskExecutor {
     class TaskCollectingVisitor extends PlanVisitor<Job, List<Task>> {
 
         @Override
+        protected List<Task> visitPlan(Plan plan, Job context) {
+            throw new UnsupportedOperationException("Plan is not supported: " + plan);
+        }
+
+        private Task createExecutableNodesTask(Job job,
+                                               @Nullable MergeNode localMergeNode,
+                                               ExecutionNode... executionNodes) {
+            if (localMergeNode != null) {
+                localMergeNode.jobId(job.id());
+            }
+            return new ExecutionNodesTask(
+                    job.id(),
+                    clusterService,
+                    contextPreparer,
+                    executionNodeOperationStarter,
+                    handlerSideDataCollectOperation,
+                    globalProjectionToProjectionVisitor,
+                    jobContextService,
+                    pageDownstreamFactory,
+                    statsTables,
+                    threadPool,
+                    transportActionProvider.transportJobInitAction(),
+                    transportActionProvider.transportCloseContextNodeAction(),
+                    streamerVisitor,
+                    circuitBreaker,
+                    localMergeNode,
+                    executionNodes
+            );
+        }
+
+        private Task createExecutableNodesTask(Job job, CollectNode collectNode, @Nullable MergeNode localMergeNode) {
+            collectNode.jobId(job.id());
+            return createExecutableNodesTask(job, localMergeNode, collectNode);
+        }
+
+        @Override
         public List<Task> visitIterablePlan(IterablePlan plan, Job job) {
             List<Task> tasks = new ArrayList<>();
             for (PlanNode planNode : plan) {
@@ -204,54 +241,26 @@ public class TransportExecutor implements Executor, TaskExecutor {
 
         @Override
         public List<Task> visitCountPlan(CountPlan countPlan, Job job) {
-            return ImmutableList.<Task>of(new ExecutionNodesTask(
-                    job.id(),
-                    clusterService,
-                    contextPreparer,
-                    executionNodeOperationStarter,
-                    handlerSideDataCollectOperation,
-                    globalProjectionToProjectionVisitor,
-                    jobContextService,
-                    pageDownstreamFactory,
-                    statsTables,
-                    threadPool,
-                    transportActionProvider.transportJobInitAction(),
-                    transportActionProvider.transportCloseContextNodeAction(),
-                    streamerVisitor,
-                    circuitBreaker,
-                    countPlan.mergeNode(),
-                    countPlan.countNode()
-            ));
-        }
-
-        private Task createExecutableNodesTask(Job job, CollectNode collectNode, @Nullable MergeNode localMergeNode) {
-            collectNode.jobId(job.id());
-            if (localMergeNode != null) {
-                localMergeNode.jobId(job.id());
-            }
-            return new ExecutionNodesTask(
-                    job.id(),
-                    clusterService,
-                    contextPreparer,
-                    executionNodeOperationStarter,
-                    handlerSideDataCollectOperation,
-                    globalProjectionToProjectionVisitor,
-                    jobContextService,
-                    pageDownstreamFactory,
-                    statsTables,
-                    threadPool,
-                    transportActionProvider.transportJobInitAction(),
-                    transportActionProvider.transportCloseContextNodeAction(),
-                    streamerVisitor,
-                    circuitBreaker,
-                    localMergeNode,
-                    collectNode
-            );
+            return ImmutableList.of(createExecutableNodesTask(job, countPlan.mergeNode(), countPlan.countNode()));
         }
 
         @Override
         public List<Task> visitNonDistributedGroupBy(NonDistributedGroupBy plan, Job job) {
             return ImmutableList.of(createExecutableNodesTask(job, plan.collectNode(), plan.localMergeNode()));
+        }
+
+        @Override
+        public List<Task> visitBulkDeletePlan(BulkDeletePlan plan, Job job) {
+            ImmutableList.Builder<Task> taskBuilder = ImmutableList.builder();
+            for (Plan subPlan : plan.childPlans()) {
+                taskBuilder.addAll(planVisitor.process(subPlan, job));
+            }
+            return taskBuilder.build();
+        }
+
+        @Override
+        public List<Task> visitDeletePlan(DeletePlan plan, Job job) {
+            return ImmutableList.of(createExecutableNodesTask(job, plan.mergeNode(), plan.deleteByQueryNode()));
         }
 
         @Override
@@ -276,25 +285,7 @@ public class TransportExecutor implements Executor, TaskExecutor {
                 localMergeNode.jobId(job.id());
             }
             return ImmutableList.<Task>of(
-                    new ExecutionNodesTask(
-                            job.id(),
-                            clusterService,
-                            contextPreparer,
-                            executionNodeOperationStarter,
-                            handlerSideDataCollectOperation,
-                            globalProjectionToProjectionVisitor,
-                            jobContextService,
-                            pageDownstreamFactory,
-                            statsTables,
-                            threadPool,
-                            transportActionProvider.transportJobInitAction(),
-                            transportActionProvider.transportCloseContextNodeAction(),
-                            streamerVisitor,
-                            circuitBreaker,
-                            localMergeNode,
-                            plan.collectNode(),
-                            plan.reducerMergeNode()
-                    ));
+                    createExecutableNodesTask(job, plan.localMergeNode(), plan.collectNode(), plan.reducerMergeNode()));
         }
 
         @Override

@@ -21,6 +21,8 @@
 
 package io.crate.planner;
 
+import io.crate.planner.node.dml.BulkDeletePlan;
+import io.crate.planner.node.dml.DeletePlan;
 import io.crate.planner.node.dml.InsertFromSubQuery;
 import io.crate.planner.node.dql.*;
 import io.crate.planner.node.dml.Upsert;
@@ -78,5 +80,13 @@ public class PlanVisitor<C, R> {
 
     public R visitCountPlan(CountPlan countPlan, C context) {
         return visitPlan(countPlan, context);
+    }
+
+    public R visitDeletePlan(DeletePlan plan, C context) {
+        return visitPlan(plan, context);
+    }
+
+    public R visitBulkDeletePlan(BulkDeletePlan plan, C context) {
+        return visitPlan(plan, context);
     }
 }

@@ -42,16 +42,19 @@ import io.crate.operation.collect.JobCollectContext;
 import io.crate.operation.collect.MapSideDataCollectOperation;
 import io.crate.operation.collect.StatsTables;
 import io.crate.operation.count.CountOperation;
+import io.crate.operation.delete.DeleteOperation;
 import io.crate.operation.projectors.ResultProvider;
 import io.crate.operation.projectors.ResultProviderFactory;
 import io.crate.planner.node.ExecutionNode;
 import io.crate.planner.node.ExecutionNodeVisitor;
 import io.crate.planner.node.ExecutionNodes;
 import io.crate.planner.node.StreamerVisitor;
+import io.crate.planner.node.dml.DeleteByQueryNode;
 import io.crate.planner.node.dql.CollectNode;
 import io.crate.planner.node.dql.CountNode;
 import io.crate.planner.node.dql.MergeNode;
 import io.crate.types.DataTypes;
+import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.cluster.ClusterService;
 import org.elasticsearch.common.breaker.CircuitBreaker;
 import org.elasticsearch.common.inject.Inject;
@@ -74,6 +77,7 @@ public class ContextPreparer {
     private final MapSideDataCollectOperation collectOperationHandler;
     private ClusterService clusterService;
     private CountOperation countOperation;
+    private DeleteOperation deleteOperation;
     private final CircuitBreaker circuitBreaker;
     private final StatsTables statsTables;
     private final ThreadPool threadPool;
@@ -89,12 +93,14 @@ public class ContextPreparer {
                            StatsTables statsTables,
                            ThreadPool threadPool,
                            CountOperation countOperation,
+                           DeleteOperation deleteOperation,
                            PageDownstreamFactory pageDownstreamFactory,
                            ResultProviderFactory resultProviderFactory,
                            StreamerVisitor streamerVisitor) {
         this.collectOperationHandler = collectOperationHandler;
         this.clusterService = clusterService;
         this.countOperation = countOperation;
+        this.deleteOperation = deleteOperation;
         circuitBreaker = breakerService.getBreaker(CrateCircuitBreakerService.QUERY_BREAKER);
         this.statsTables = statsTables;
         this.threadPool = threadPool;
@@ -157,6 +163,25 @@ public class ContextPreparer {
             } catch (InterruptedException | IOException e) {
                 throw Throwables.propagate(e);
             }
+            return null;
+        }
+
+        @Override
+        public Void visitDeleteByQueryNode(DeleteByQueryNode node, PreparerContext context) {
+            final SingleBucketBuilder singleBucketBuilder = new SingleBucketBuilder(new Streamer[]{DataTypes.LONG});
+            context.directResultFuture = singleBucketBuilder.result();
+            deleteOperation.delete(node, new ActionListener<Long>() {
+                @Override
+                public void onResponse(Long aLong) {
+                    singleBucketBuilder.setNextRow(new Row1(aLong));
+                    singleBucketBuilder.finish();
+                }
+
+                @Override
+                public void onFailure(Throwable e) {
+                    singleBucketBuilder.fail(e);
+                }
+            });
             return null;
         }
 

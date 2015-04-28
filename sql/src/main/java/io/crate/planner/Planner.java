@@ -28,7 +28,6 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import io.crate.analyze.*;
 import io.crate.analyze.relations.PlannedAnalyzedRelation;
-import io.crate.analyze.relations.TableRelation;
 import io.crate.core.collections.TreeMapBuilder;
 import io.crate.exceptions.UnhandledServerException;
 import io.crate.metadata.*;
@@ -37,17 +36,18 @@ import io.crate.metadata.table.TableInfo;
 import io.crate.operation.aggregation.impl.CountAggregation;
 import io.crate.planner.consumer.ConsumerContext;
 import io.crate.planner.consumer.ConsumingPlanner;
+import io.crate.planner.consumer.DeleteSubPlanner;
 import io.crate.planner.consumer.UpdateConsumer;
-import io.crate.planner.node.ddl.*;
-import io.crate.planner.node.dml.ESDeleteByQueryNode;
-import io.crate.planner.node.dml.ESDeleteNode;
+import io.crate.planner.node.ddl.CreateTableNode;
+import io.crate.planner.node.ddl.DropTableNode;
+import io.crate.planner.node.ddl.ESClusterUpdateSettingsNode;
+import io.crate.planner.node.ddl.GenericDDLNode;
 import io.crate.planner.node.dml.SymbolBasedUpsertByIdNode;
 import io.crate.planner.node.dml.Upsert;
 import io.crate.planner.node.dql.CollectAndMerge;
 import io.crate.planner.node.dql.CollectNode;
 import io.crate.planner.node.dql.FileUriCollectNode;
 import io.crate.planner.node.dql.MergeNode;
-import io.crate.planner.projection.AggregationProjection;
 import io.crate.planner.projection.Projection;
 import io.crate.planner.projection.SourceIndexWriterProjection;
 import io.crate.planner.projection.WriterProjection;
@@ -77,8 +77,8 @@ public class Planner extends AnalyzedStatementVisitor<Planner.Context, Plan> {
 
     private final ConsumingPlanner consumingPlanner;
     private final ClusterService clusterService;
-    private UpdateConsumer updateConsumer;
-    private AggregationProjection localMergeProjection;
+    private final UpdateConsumer updateConsumer;
+    private final DeleteSubPlanner deleteSubPlanner;
 
     public static class Context {
 
@@ -153,8 +153,12 @@ public class Planner extends AnalyzedStatementVisitor<Planner.Context, Plan> {
     }
 
     @Inject
-    public Planner(ClusterService clusterService, ConsumingPlanner consumingPlanner, UpdateConsumer updateConsumer) {
+    public Planner(ClusterService clusterService,
+                   ConsumingPlanner consumingPlanner,
+                   DeleteSubPlanner deleteSubPlanner,
+                   UpdateConsumer updateConsumer) {
         this.clusterService = clusterService;
+        this.deleteSubPlanner = deleteSubPlanner;
         this.updateConsumer = updateConsumer;
         this.consumingPlanner = consumingPlanner;
     }
@@ -202,22 +206,7 @@ public class Planner extends AnalyzedStatementVisitor<Planner.Context, Plan> {
 
     @Override
     protected Plan visitDeleteStatement(DeleteAnalyzedStatement analyzedStatement, Context context) {
-        IterablePlan plan = new IterablePlan();
-        TableRelation tableRelation = analyzedStatement.analyzedRelation();
-        for (WhereClause whereClause : analyzedStatement.whereClauses()) {
-            if (whereClause.noMatch()) {
-                continue;
-            }
-            if (whereClause.docKeys().isPresent() && whereClause.docKeys().get().size()==1) {
-                createESDeleteNode(tableRelation.tableInfo(), whereClause, plan);
-            } else {
-                createESDeleteByQueryNode(tableRelation.tableInfo(), whereClause, plan);
-            }
-        }
-        if (plan.isEmpty()) {
-            return NoopPlan.INSTANCE;
-        }
-        return plan;
+        return deleteSubPlanner.deletePlan(analyzedStatement, context);
     }
 
     @Override
@@ -466,25 +455,6 @@ public class Planner extends AnalyzedStatementVisitor<Planner.Context, Plan> {
         return node != null ? new IterablePlan(node) : NoopPlan.INSTANCE;
     }
 
-    private void createESDeleteNode(TableInfo tableInfo, WhereClause whereClause, IterablePlan plan) {
-        plan.add(new ESDeleteNode(tableInfo, whereClause.docKeys().get().getOnlyKey()));
-    }
-
-    private void createESDeleteByQueryNode(TableInfo tableInfo, WhereClause whereClause, IterablePlan plan) {
-        String[] indices = indices(tableInfo, whereClause);
-        if (indices.length > 0 && !whereClause.noMatch()) {
-            if (!whereClause.hasQuery() && tableInfo.isPartitioned()) {
-                for (String index : indices) {
-                    plan.add(new ESDeleteIndexNode(index, true));
-                }
-            } else {
-                // TODO: if we allow queries like 'partitionColumn=X or column=Y' which is currently
-                // forbidden through analysis, we must issue deleteByQuery request in addition
-                // to above deleteIndex request(s)
-                plan.add(new ESDeleteByQueryNode(indices, whereClause));
-            }
-        }
-    }
 
     private Upsert processInsertStatement(InsertFromValuesAnalyzedStatement analysis) {
         String[] onDuplicateKeyAssignmentsColumns = null;

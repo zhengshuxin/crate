@@ -19,36 +19,14 @@
  * software solely pursuant to the terms of the relevant commercial agreement.
  */
 
-package io.crate.planner.node;
+package io.crate.operation.delete;
 
 import io.crate.planner.node.dml.DeleteByQueryNode;
-import io.crate.planner.node.dql.CollectNode;
-import io.crate.planner.node.dql.CountNode;
-import io.crate.planner.node.dql.MergeNode;
+import org.elasticsearch.action.ActionListener;
+import org.elasticsearch.common.inject.ImplementedBy;
 
-public class ExecutionNodeVisitor<C, R> {
+@ImplementedBy(DummyDeleteOperation.class)
+public interface DeleteOperation {
 
-    public R process(ExecutionNode node, C context) {
-        return node.accept(this, context);
-    }
-
-    protected R visitExecutionNode(ExecutionNode node, C context) {
-        return null;
-    }
-
-    public R visitCollectNode(CollectNode node, C context) {
-        return visitExecutionNode(node, context);
-    }
-
-    public R visitMergeNode(MergeNode node, C context) {
-        return visitExecutionNode(node, context);
-    }
-
-    public R visitCountNode(CountNode countNode, C context) {
-        return visitExecutionNode(countNode, context);
-    }
-
-    public R visitDeleteByQueryNode(DeleteByQueryNode node, C context) {
-        return visitExecutionNode(node, context);
-    }
+    void delete(DeleteByQueryNode deleteNode, ActionListener<Long> listener);
 }
