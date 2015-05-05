@@ -24,13 +24,14 @@ package io.crate.operation.delete;
 import com.google.common.base.Function;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
-import io.crate.Constants;
 import io.crate.analyze.WhereClause;
 import io.crate.lucene.LuceneQueryBuilder;
 import io.crate.operation.ThreadPools;
 import io.crate.operation.collect.EngineSearcher;
 import org.apache.lucene.index.*;
-import org.apache.lucene.search.*;
+import org.apache.lucene.search.DocIdSet;
+import org.apache.lucene.search.DocIdSetIterator;
+import org.apache.lucene.search.QueryWrapperFilter;
 import org.elasticsearch.cache.recycler.CacheRecycler;
 import org.elasticsearch.cache.recycler.PageCacheRecycler;
 import org.elasticsearch.cluster.ClusterService;
@@ -40,10 +41,8 @@ import org.elasticsearch.common.inject.Singleton;
 import org.elasticsearch.common.logging.ESLogger;
 import org.elasticsearch.common.logging.Loggers;
 import org.elasticsearch.common.util.BigArrays;
-import org.elasticsearch.index.VersionType;
 import org.elasticsearch.index.engine.Engine;
 import org.elasticsearch.index.engine.VersionConflictEngineException;
-import org.elasticsearch.index.mapper.Uid;
 import org.elasticsearch.index.mapper.internal.UidFieldMapper;
 import org.elasticsearch.index.mapper.internal.VersionFieldMapper;
 import org.elasticsearch.index.service.IndexService;
@@ -165,6 +164,7 @@ public class InternalDeleteOperation implements DeleteOperation {
             LuceneQueryBuilder.Context queryCtx =
                     luceneQueryBuilder.convert(whereClause, searchContext, indexService.cache());
 
+            /*
             searcher.searcher().search(queryCtx.query(), new Collector() {
 
                 AtomicReader currentReader;
@@ -227,10 +227,10 @@ public class InternalDeleteOperation implements DeleteOperation {
             });
 
             return counter.get();
-            /*
-            QueryWrapperFilter filter = new QueryWrapperFilter(queryCtx.query());
-            return innerDelete(indexShard, searcher, filter, uidValues, uidVisitor);
             */
+
+            QueryWrapperFilter filter = new QueryWrapperFilter(queryCtx.query());
+            return innerDelete(indexShard, searcher, filter);
         } finally {
             searchContext.close();
             SearchContext.removeCurrent();
@@ -239,9 +239,30 @@ public class InternalDeleteOperation implements DeleteOperation {
 
     private long innerDelete(IndexShard indexShard,
                              Engine.Searcher searcher,
-                             QueryWrapperFilter filter,
-                             String[] uidValues,
-                             StoredFieldVisitor uidVisitor) throws IOException {
+                             QueryWrapperFilter filter) throws IOException {
+        final String[] uidValues = new String[1];
+        final StoredFieldVisitor uidVisitor = new StoredFieldVisitor() {
+            @Override
+            public Status needsField(FieldInfo fieldInfo) throws IOException {
+                if (uidValues[0] != null) {
+                    return Status.STOP;
+                } else if (fieldInfo.name.equals(UidFieldMapper.NAME)) {
+                    return Status.YES;
+                } else {
+                    return Status.NO;
+                }
+            }
+
+            @Override
+            public void stringField(FieldInfo fieldInfo, String value) throws IOException {
+                assert fieldInfo.name.equals(UidFieldMapper.NAME);
+                uidValues[0] = value;
+            }
+        };
+
+
+        IndexWriter writer = indexShard.writer();
+
         long deleted = 0;
         for (AtomicReaderContext context : searcher.reader().leaves()) {
             AtomicReader leafReader = context.reader();
@@ -253,7 +274,6 @@ public class InternalDeleteOperation implements DeleteOperation {
             if (docIdSetIterator == null) {
                 continue;
             }
-
             NumericDocValues versions = leafReader.getNumericDocValues(VersionFieldMapper.NAME);
 
             while (true) {
@@ -265,16 +285,16 @@ public class InternalDeleteOperation implements DeleteOperation {
                 if (uidValues[0] == null) {
                     continue;
                 }
-                Uid uid  = Uid.createUid(uidValues[0]);
                 try {
-                    Engine.Delete delete = indexShard.prepareDelete(Constants.DEFAULT_MAPPING_TYPE,
-                            uid.id(), versions.get(doc), VersionType.INTERNAL, Engine.Operation.Origin.PRIMARY);
-                    indexShard.delete(delete);
+                    boolean b = writer.tryDeleteDocument(leafReader, doc);
+                    if (b) {
+                        deleted++;
+                    }
                 } catch (VersionConflictEngineException e) {
                     LOGGER.warn(e.getMessage(), e);
+                } finally {
+                    uidValues[0] = null;
                 }
-
-                deleted++;
             }
         }
         return deleted;
