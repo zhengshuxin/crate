@@ -24,13 +24,14 @@ package io.crate.planner.node.dql;
 import io.crate.planner.PlanAndPlannedAnalyzedRelation;
 import io.crate.planner.PlanVisitor;
 import io.crate.planner.projection.Projection;
+import org.elasticsearch.common.Nullable;
 
 public class QueryThenFetch extends PlanAndPlannedAnalyzedRelation {
 
     private final CollectNode collectNode;
-    private MergeNode mergeNode;
+    private @Nullable MergeNode mergeNode;
 
-    public QueryThenFetch(CollectNode collectNode, MergeNode mergeNode) {
+    public QueryThenFetch(CollectNode collectNode, @Nullable MergeNode mergeNode) {
         this.collectNode = collectNode;
         this.mergeNode = mergeNode;
     }
@@ -39,7 +40,7 @@ public class QueryThenFetch extends PlanAndPlannedAnalyzedRelation {
         return collectNode;
     }
 
-    public MergeNode mergeNode() {
+    public @Nullable MergeNode mergeNode() {
         return mergeNode;
     }
 
@@ -50,7 +51,7 @@ public class QueryThenFetch extends PlanAndPlannedAnalyzedRelation {
 
     @Override
     public void addProjection(Projection projection) {
-        mergeNode.projections().add(projection);
+        resultNode().addProjection(projection);
     }
 
     @Override
