@@ -44,6 +44,10 @@ public class QueryThenFetch extends PlanAndPlannedAnalyzedRelation {
         return mergeNode;
     }
 
+    public void mergeNode(MergeNode mergeNode) {
+        this.mergeNode = mergeNode;
+    }
+
     @Override
     public <C, R> R accept(PlanVisitor<C, R> visitor, C context) {
         return visitor.visitQueryThenFetch(this, context);

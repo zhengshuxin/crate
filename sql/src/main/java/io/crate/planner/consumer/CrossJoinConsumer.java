@@ -32,7 +32,9 @@ import io.crate.analyze.relations.TableRelation;
 import io.crate.exceptions.ValidationException;
 import io.crate.operation.projectors.TopN;
 import io.crate.planner.Plan;
+import io.crate.planner.PlanNodeBuilder;
 import io.crate.planner.node.NoopPlannedAnalyzedRelation;
+import io.crate.planner.node.dql.MergeNode;
 import io.crate.planner.node.dql.join.NestedLoop;
 import io.crate.planner.projection.FilterProjection;
 import io.crate.planner.projection.Projection;
@@ -285,7 +287,7 @@ public class CrossJoinConsumer implements Consumer {
 
             // check that every inner relation is planned
             for (AnalyzedRelation relation : statement.sources().values()) {
-                if (relation instanceof PlannedAnalyzedRelation) {
+                if (!(relation instanceof PlannedAnalyzedRelation)) {
                     return null;
                     // TODO: check whereClause No match for each relation
                 }
@@ -296,7 +298,36 @@ public class CrossJoinConsumer implements Consumer {
                 return new NoopPlannedAnalyzedRelation(statement);
             }
 
-            return null;
+            // TODO: calculate rootLimit
+            // TODO: check remaining query
+            // TODO: consider orderByOrder
+
+            NestedLoop nl = null;
+            Iterator<AnalyzedRelation> iterator = statement.sources().values().iterator();
+            while (iterator.hasNext()) {
+                PlannedAnalyzedRelation plannedAnalyzedRelation = (PlannedAnalyzedRelation)iterator.next();
+                if (nl == null) {
+                    assert iterator.hasNext();
+                    PlannedAnalyzedRelation secondAnalyzedRelation = (PlannedAnalyzedRelation)iterator.next();
+                    nl = new NestedLoop(plannedAnalyzedRelation, secondAnalyzedRelation, true);
+                } else {
+                    // use the already created nestedLoop as left innerPlan
+                    nl = new NestedLoop(nl, plannedAnalyzedRelation, true);
+                }
+            }
+
+            // TODO: add FetchProjection to localMergeProjection
+
+            List<Projection> mergeProjections = new ArrayList<>();
+
+            int rootLimit = MoreObjects.firstNonNull(statement.querySpec().limit(), Constants.DEFAULT_SELECT_LIMIT);
+            TopNProjection topNProjection = new TopNProjection(rootLimit, statement.querySpec().offset());
+            mergeProjections.add(topNProjection);
+
+            // TODO: consider orderBy
+            MergeNode localMergeNode = PlanNodeBuilder.localMerge(mergeProjections, nl.resultNode(), context.plannerContext());
+            nl.mergeNode(localMergeNode);
+            return nl;
         }
 
         @Override
