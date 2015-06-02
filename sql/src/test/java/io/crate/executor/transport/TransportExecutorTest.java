@@ -167,7 +167,7 @@ public class TransportExecutorTest extends BaseTransportExecutorTest {
                 collectNode,
                 ctx);
 
-        Plan plan = new QueryThenFetch(collectNode, localMergeNode);
+        Plan plan = new QueryThenFetch(collectNode, localMergeNode, new QueryThenFetch.Context(null, null, null, null, null));
 
         Job job = executor.newJob(plan);
         assertThat(job.tasks().size(), is(1));
@@ -215,7 +215,7 @@ public class TransportExecutorTest extends BaseTransportExecutorTest {
                 collectNode,
                 ctx);
 
-        Plan plan = new QueryThenFetch(collectNode, localMergeNode);
+        Plan plan = new QueryThenFetch(collectNode, localMergeNode, null);
 
         Job job = executor.newJob(plan);
         assertThat(job.tasks().size(), is(1));
@@ -224,6 +224,7 @@ public class TransportExecutorTest extends BaseTransportExecutorTest {
         assertThat(rows, contains(isRow(2, "Ford")));
     }
 
+    
     private FetchProjection getFetchProjection(DocTableInfo characters, List<Symbol> collectSymbols, List<Symbol> outputSymbols, CollectNode collectNode, Planner.Context ctx) {
         Map<Integer, List<String>> executionNodes = new HashMap<>();
         executionNodes.put(collectNode.executionNodeId(), new ArrayList<>(collectNode.executionNodes()));
@@ -284,7 +285,7 @@ public class TransportExecutorTest extends BaseTransportExecutorTest {
                 collectNode,
                 ctx);
 
-        Plan plan = new QueryThenFetch(collectNode, localMergeNode);
+        Plan plan = new QueryThenFetch(collectNode, localMergeNode, null);
 
         Job job = executor.newJob(plan);
         assertThat(job.tasks().size(), is(1));
@@ -355,7 +356,7 @@ public class TransportExecutorTest extends BaseTransportExecutorTest {
                 ImmutableList.of(topN, fetchProjection),
                 collectNode,
                 ctx);
-        Plan plan = new QueryThenFetch(collectNode, mergeNode);
+        Plan plan = new QueryThenFetch(collectNode, mergeNode, null);
 
         Job job = executor.newJob(plan);
         assertThat(job.tasks().size(), is(1));
@@ -393,7 +394,7 @@ public class TransportExecutorTest extends BaseTransportExecutorTest {
                 collectNode,
                 ctx);
 
-        Plan plan = new QueryThenFetch(collectNode, localMergeNode);
+        Plan plan = new QueryThenFetch(collectNode, localMergeNode, null);
         Job job = executor.newJob(plan);
 
         assertThat(job.tasks().size(), is(1));

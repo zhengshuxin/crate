@@ -29,10 +29,7 @@ import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import io.crate.action.job.ContextPreparer;
-import io.crate.analyze.Analysis;
-import io.crate.analyze.Analyzer;
-import io.crate.analyze.ParameterContext;
-import io.crate.analyze.WhereClause;
+import io.crate.analyze.*;
 import io.crate.analyze.relations.PlannedAnalyzedRelation;
 import io.crate.core.collections.Bucket;
 import io.crate.core.collections.Row;
@@ -200,7 +197,8 @@ public class FetchOperationIntegrationTest extends SQLTransportIntegrationTest {
         setUpCharacters();
 
         Analysis analysis = analyze("select id, name from characters");
-        QueryThenFetchConsumer queryThenFetchConsumer = internalCluster().getInstance(QueryThenFetchConsumer.class);
+        AnalysisMetaData analysisMetaData = internalCluster().getInstance(AnalysisMetaData.class);
+        QueryThenFetchConsumer queryThenFetchConsumer = new QueryThenFetchConsumer(analysisMetaData);
         Planner.Context plannerContext = new Planner.Context(clusterService());
         ConsumerContext consumerContext = new ConsumerContext(analysis.rootRelation(), plannerContext);
         queryThenFetchConsumer.consume(analysis.rootRelation(), consumerContext);

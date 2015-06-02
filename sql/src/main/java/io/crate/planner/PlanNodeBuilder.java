@@ -35,12 +35,15 @@ import io.crate.planner.consumer.OrderByPositionVisitor;
 import io.crate.planner.node.dql.CollectNode;
 import io.crate.planner.node.dql.DQLPlanNode;
 import io.crate.planner.node.dql.MergeNode;
+import io.crate.planner.node.dql.join.NestedLoopNode;
 import io.crate.planner.projection.Projection;
 import io.crate.planner.symbol.InputColumn;
 import io.crate.planner.symbol.Symbol;
 import io.crate.planner.symbol.Symbols;
+import io.crate.types.DataType;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -94,6 +97,26 @@ public class PlanNodeBuilder {
                 previousNode.executionNodes().size());
         node.projections(projections);
         connectTypes(previousNode, node);
+        return node;
+    }
+
+    public static NestedLoopNode nestedLoopNode(List<Projection> projections,
+                                                @Nullable MergeNode left,
+                                                @Nullable MergeNode right,
+                                                Planner.Context plannerContext) {
+        NestedLoopNode node = new NestedLoopNode(
+                plannerContext.nextExecutionNodeId(),
+                plannerContext.nextExecutionNodeId(),
+                "localNestedLoopNode"
+        );
+        node.projections(projections);
+        connectTypes(left, right, node);
+        if(left != null) {
+            left.downstreamExecutionNodeId(node.leftExecutionNodeId());
+        }
+        if (right != null) {
+            right.downstreamExecutionNodeId(node.rightExecutionNodeId());
+        }
         return node;
     }
 
@@ -154,6 +177,19 @@ public class PlanNodeBuilder {
     public static void connectTypes(DQLPlanNode previousNode, DQLPlanNode nextNode) {
         nextNode.inputTypes(previousNode.outputTypes());
         nextNode.outputTypes(Planner.extractDataTypes(nextNode.projections(), nextNode.inputTypes()));
+    }
+
+    public static void connectTypes(@Nullable DQLPlanNode left, @Nullable DQLPlanNode right, NestedLoopNode nextNode) {
+        List<DataType> outputTypes = new ArrayList<>();
+        if (left != null) {
+            outputTypes.addAll(left.inputTypes());
+            nextNode.leftInputTypes(left.outputTypes());
+        }
+        if (right != null) {
+            nextNode.rightInputTypes(right.inputTypes());
+            outputTypes.addAll(right.inputTypes());
+        }
+        nextNode.outputTypes(Planner.extractDataTypes(nextNode.projections(), outputTypes));
     }
 
     public static CollectNode collect(TableInfo tableInfo,

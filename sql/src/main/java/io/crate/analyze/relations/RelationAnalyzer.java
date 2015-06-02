@@ -78,10 +78,6 @@ public class RelationAnalyzer extends DefaultTraversalVisitor<AnalyzedRelation, 
         for (Relation relation : node.getFrom()) {
             process(relation, context);
         }
-        if (context.sources().size() != 1) {
-            throw new UnsupportedOperationException
-                    ("Only exactly one table is allowed in the FROM clause, got: " + context.sources().size());
-        }
         ExpressionAnalysisContext expressionAnalysisContext = context.expressionAnalysisContext();
 
         WhereClause whereClause = analyzeWhere(node.getWhere(), context);
@@ -110,9 +106,8 @@ public class RelationAnalyzer extends DefaultTraversalVisitor<AnalyzedRelation, 
         if (context.sources().size()==1){
             Map.Entry<QualifiedName, AnalyzedRelation> entry = Iterables.getOnlyElement(context.sources().entrySet());
             if (entry.getValue() instanceof TableRelation){
-                QueriedTable relation = new QueriedTable(entry.getKey(), (TableRelation) entry.getValue(),
-                        selectAnalysis.outputNames(), querySpec);
-                relation = relation.normalize(analysisMetaData);
+                QueriedRelation relation = new QueriedTable(entry.getKey(), (TableRelation) entry.getValue(),
+                        selectAnalysis.outputNames(), querySpec).normalize(analysisMetaData);
                 return relation;
             } else {
                 throw new UnsupportedOperationException
