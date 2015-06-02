@@ -21,26 +21,44 @@
 
 package io.crate.planner.node.dql;
 
+import io.crate.analyze.OrderBy;
+import io.crate.metadata.ReferenceInfo;
 import io.crate.planner.PlanAndPlannedAnalyzedRelation;
 import io.crate.planner.PlanVisitor;
 import io.crate.planner.projection.Projection;
+import io.crate.planner.symbol.Field;
+import io.crate.planner.symbol.Symbol;
+import org.elasticsearch.common.Nullable;
+
+import java.util.List;
 
 public class QueryThenFetch extends PlanAndPlannedAnalyzedRelation {
 
     private final CollectNode collectNode;
-    private MergeNode mergeNode;
+    private @Nullable MergeNode mergeNode;
+    private final Context context;
 
-    public QueryThenFetch(CollectNode collectNode, MergeNode mergeNode) {
+    public QueryThenFetch(CollectNode collectNode, @Nullable MergeNode mergeNode, Context context) {
         this.collectNode = collectNode;
         this.mergeNode = mergeNode;
+        this.context = context;
     }
 
     public CollectNode collectNode() {
         return collectNode;
     }
 
+    @Nullable
     public MergeNode mergeNode() {
         return mergeNode;
+    }
+
+    public void mergeNode(MergeNode mergeNode) {
+        this.mergeNode = mergeNode;
+    }
+
+    public Context context() {
+        return context;
     }
 
     @Override
@@ -50,7 +68,7 @@ public class QueryThenFetch extends PlanAndPlannedAnalyzedRelation {
 
     @Override
     public void addProjection(Projection projection) {
-        mergeNode.projections().add(projection);
+        resultNode().addProjection(projection);
     }
 
     @Override
@@ -61,5 +79,48 @@ public class QueryThenFetch extends PlanAndPlannedAnalyzedRelation {
     @Override
     public DQLPlanNode resultNode() {
         return mergeNode == null ? collectNode : mergeNode;
+    }
+
+    public static class Context {
+
+        private final List<Symbol> outputs;
+        private final List<Symbol> collectSymbols;
+        private final List<ReferenceInfo> partitionedByColumns;
+        private final List<Field> fields;
+        @Nullable
+        private final OrderBy orderBy;
+
+        public Context(List<Symbol> outputs,
+                       List<Symbol> collectSymbols,
+                       @Nullable OrderBy orderBy,
+                       List<ReferenceInfo> partitionedByColumns,
+                       List<Field> fields) {
+            this.outputs = outputs;
+            this.partitionedByColumns = partitionedByColumns;
+            this.collectSymbols = collectSymbols;
+            this.orderBy = orderBy;
+            this.fields = fields;
+        }
+
+        public List<Symbol> outputs() {
+            return outputs;
+        }
+
+        public List<Symbol> collectSymbols() {
+            return collectSymbols;
+        }
+
+        public List<ReferenceInfo> partitionedByColumns() {
+            return partitionedByColumns;
+        }
+
+        public OrderBy orderBy() {
+            return orderBy;
+        }
+
+        public List<Field> fields() {
+            return fields;
+        }
+
     }
 }

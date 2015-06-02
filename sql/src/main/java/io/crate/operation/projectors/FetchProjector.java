@@ -175,7 +175,7 @@ public class FetchProjector implements Projector, RowDownstreamHandle {
         String nodeId = jobSearchContextIdToNode.get(jobSearchContextId);
         String index = jobSearchContextIdToShard.get(jobSearchContextId).getIndex();
         Integer executionNodeId = jobSearchContextIdToExecutionNodeId.get(jobSearchContextId);
-        int nodeIdIndex = Objects.hash(nodeId, executionNodeId);
+        int nodeIdIndex = Objects.hash(nodeId);
 
         NodeBucket nodeBucket = nodeBuckets.get(nodeIdIndex);
         if (nodeBucket == null) {

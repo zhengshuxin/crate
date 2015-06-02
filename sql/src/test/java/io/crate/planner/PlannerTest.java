@@ -1,5 +1,6 @@
 package io.crate.planner;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import io.crate.Constants;
 import io.crate.analyze.Analyzer;
@@ -72,37 +73,17 @@ public class PlannerTest extends CrateUnitTest {
 
     private Analyzer analyzer;
     private Planner planner;
-    Routing shardRouting = new Routing(TreeMapBuilder.<String, Map<String, List<Integer>>>newMapBuilder()
-            .put("nodeOne", TreeMapBuilder.<String, List<Integer>>newMapBuilder().put("t1", Arrays.asList(1, 2)).map())
-            .put("nodeTow", TreeMapBuilder.<String, List<Integer>>newMapBuilder().put("t1", Arrays.asList(3, 4)).map())
-            .map());
-
-    Routing nodesRouting = new Routing(TreeMapBuilder.<String, Map<String, List<Integer>>>newMapBuilder()
-            .put("nodeOne", TreeMapBuilder.<String, List<Integer>>newMapBuilder().map())
-            .put("nodeTow", TreeMapBuilder.<String, List<Integer>>newMapBuilder().map())
-            .map());
-
-    final Routing partedRouting = new Routing(TreeMapBuilder.<String, Map<String, List<Integer>>>newMapBuilder()
-            .put("nodeOne", TreeMapBuilder.<String, List<Integer>>newMapBuilder().put(".partitioned.parted.04232chj", Arrays.asList(1, 2)).map())
-            .put("nodeTow", TreeMapBuilder.<String, List<Integer>>newMapBuilder().map())
-            .map());
-
-    final Routing clusteredPartedRouting = new Routing(TreeMapBuilder.<String, Map<String, List<Integer>>>newMapBuilder()
-            .put("nodeOne", TreeMapBuilder.<String, List<Integer>>newMapBuilder().put(".partitioned.clustered_parted.04732cpp6ks3ed1o60o30c1g",  Arrays.asList(1, 2)).map())
-            .put("nodeTwo", TreeMapBuilder.<String, List<Integer>>newMapBuilder().put(".partitioned.clustered_parted.04732cpp6ksjcc9i60o30c1g",  Arrays.asList(3)).map())
-            .map());
-
-    private ClusterService clusterService;
 
     private final static String LOCAL_NODE_ID = "foo";
     private ThreadPool threadPool;
-
+    private TestModule testModule;
 
     @Before
     public void prepare() throws Exception {
         threadPool = TestingHelpers.newMockedThreadPool();
+        testModule = plannerTestModule(threadPool);
         Injector injector = new ModulesBuilder()
-                .add(new TestModule())
+                .add(testModule)
                 .add(new AggregationImplModule())
                 .add(new ScalarFunctionModule())
                 .add(new PredicateModule())
@@ -118,8 +99,50 @@ public class PlannerTest extends CrateUnitTest {
         threadPool.awaitTermination(1, TimeUnit.SECONDS);
     }
 
+    public static TestModule plannerTestModule(ThreadPool threadPool) {
+        return new TestModule(threadPool);
+    }
 
-    class TestModule extends MetaDataModule {
+
+    public static class TestModule extends MetaDataModule {
+
+        private final ThreadPool threadPool;
+
+        private ClusterService clusterService;
+
+        final Routing nodesRouting = new Routing(TreeMapBuilder.<String, Map<String, List<Integer>>>newMapBuilder()
+                .put("nodeOne", TreeMapBuilder.<String, List<Integer>>newMapBuilder().map())
+                .put("nodeTow", TreeMapBuilder.<String, List<Integer>>newMapBuilder().map())
+                .map());
+
+
+        final Routing clusteredPartedRouting = new Routing(TreeMapBuilder.<String, Map<String, List<Integer>>>newMapBuilder()
+                .put("nodeOne", TreeMapBuilder.<String, List<Integer>>newMapBuilder().put(".partitioned.clustered_parted.04732cpp6ks3ed1o60o30c1g",  Arrays.asList(1, 2)).map())
+                .put("nodeTwo", TreeMapBuilder.<String, List<Integer>>newMapBuilder().put(".partitioned.clustered_parted.04732cpp6ksjcc9i60o30c1g",  Arrays.asList(3)).map())
+                .map());
+
+        final Routing shardRouting = new Routing(TreeMapBuilder.<String, Map<String, List<Integer>>>newMapBuilder()
+                .put("nodeOne", TreeMapBuilder.<String, List<Integer>>newMapBuilder().put("t1", Arrays.asList(1, 2)).map())
+                .put("nodeTow", TreeMapBuilder.<String, List<Integer>>newMapBuilder().put("t1", Arrays.asList(3, 4)).map())
+                .map());
+
+        final Routing partedRouting = new Routing(TreeMapBuilder.<String, Map<String, List<Integer>>>newMapBuilder()
+                .put("nodeOne", TreeMapBuilder.<String, List<Integer>>newMapBuilder().put(".partitioned.parted.04232chj", Arrays.asList(1, 2)).map())
+                .put("nodeTow", TreeMapBuilder.<String, List<Integer>>newMapBuilder().map())
+                .map());
+
+
+        public TestModule(ThreadPool threadPool) {
+            this.threadPool = threadPool;
+        }
+
+        public ClusterService clusterService() {
+            return clusterService;
+        }
+
+        public Routing shardRouting() {
+            return shardRouting;
+        }
 
         @Override
         protected void configure() {
@@ -160,6 +183,8 @@ public class PlannerTest extends CrateUnitTest {
                     .add("date", DataTypes.TIMESTAMP, null)
                     .add("text", DataTypes.STRING, null, ReferenceInfo.IndexType.ANALYZED)
                     .add("no_index", DataTypes.STRING, null, ReferenceInfo.IndexType.NO)
+                    .add("address", DataTypes.OBJECT, null)
+                    .add("address", DataTypes.STRING, ImmutableList.of("street"))
                     .addPrimaryKey("id")
                     .clusteredBy("id")
                     .build();
@@ -944,7 +969,7 @@ public class PlannerTest extends CrateUnitTest {
         CollectAndMerge planNode = (CollectAndMerge) plan.nodes().get(0);
 
         CollectNode collectNode = planNode.collectNode();
-        assertThat(collectNode.routing(), is(shardRouting));
+        assertThat(collectNode.routing(), is(testModule.shardRouting()));
         assertFalse(collectNode.whereClause().noMatch());
         assertFalse(collectNode.whereClause().hasQuery());
         assertThat(collectNode.projections().size(), is(1));
@@ -1810,13 +1835,13 @@ public class PlannerTest extends CrateUnitTest {
     @Test
     public void testIndices() throws Exception {
         TableIdent custom = new TableIdent("custom", "table");
-        String[] indices = Planner.indices(TestingTableInfo.builder(custom, RowGranularity.DOC, shardRouting).add("id", DataTypes.INTEGER, null).build(), WhereClause.MATCH_ALL);
+        String[] indices = Planner.indices(TestingTableInfo.builder(custom, RowGranularity.DOC, testModule.shardRouting()).add("id", DataTypes.INTEGER, null).build(), WhereClause.MATCH_ALL);
         assertThat(indices, arrayContainingInAnyOrder("custom.table"));
 
-        indices = Planner.indices(TestingTableInfo.builder(new TableIdent(null, "table"), RowGranularity.DOC, shardRouting).add("id", DataTypes.INTEGER, null).build(), WhereClause.MATCH_ALL);
+        indices = Planner.indices(TestingTableInfo.builder(new TableIdent(null, "table"), RowGranularity.DOC, testModule.shardRouting()).add("id", DataTypes.INTEGER, null).build(), WhereClause.MATCH_ALL);
         assertThat(indices, arrayContainingInAnyOrder("table"));
 
-        indices = Planner.indices(TestingTableInfo.builder(custom, RowGranularity.DOC, shardRouting)
+        indices = Planner.indices(TestingTableInfo.builder(custom, RowGranularity.DOC, testModule.shardRouting())
                 .add("id", DataTypes.INTEGER, null)
                 .add("date", DataTypes.TIMESTAMP, null, true)
                 .addPartitions(new PartitionName(custom, Arrays.asList(new BytesRef("0"))).stringValue())
@@ -1827,9 +1852,9 @@ public class PlannerTest extends CrateUnitTest {
 
     @Test
     public void testAllocatedJobSearchContextIds() throws Exception {
-        Planner.Context plannerContext = new Planner.Context(clusterService);
+        Planner.Context plannerContext = new Planner.Context(testModule.clusterService());
         CollectNode collectNode = new CollectNode(
-                plannerContext.nextExecutionNodeId(), "collect", shardRouting);
+                plannerContext.nextExecutionNodeId(), "collect", testModule.shardRouting());
         int shardNum = collectNode.routing().numShards();
 
         plannerContext.allocateJobSearchContextIds(collectNode.routing());
@@ -1861,11 +1886,11 @@ public class PlannerTest extends CrateUnitTest {
 
     @Test
     public void testExecutionNodeIdSequence() throws Exception {
-        Planner.Context plannerContext = new Planner.Context(clusterService);
+        Planner.Context plannerContext = new Planner.Context(testModule.clusterService());
         CollectNode collectNode1 = new CollectNode(
-                plannerContext.nextExecutionNodeId(), "collect1", shardRouting);
+                plannerContext.nextExecutionNodeId(), "collect1", testModule.shardRouting());
         CollectNode collectNode2 = new CollectNode(
-                plannerContext.nextExecutionNodeId(), "collect2", shardRouting);
+                plannerContext.nextExecutionNodeId(), "collect2", testModule.shardRouting());
 
         assertThat(collectNode1.executionNodeId(), is(0));
         assertThat(collectNode2.executionNodeId(), is(1));
@@ -1885,4 +1910,5 @@ public class PlannerTest extends CrateUnitTest {
         Plan killPlan = plan("kill all");
         assertThat(killPlan, Matchers.<Plan>is(KillPlan.INSTANCE));
     }
+
 }
