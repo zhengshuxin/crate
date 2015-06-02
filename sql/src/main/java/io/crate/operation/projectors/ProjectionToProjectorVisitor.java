@@ -28,6 +28,7 @@ import io.crate.metadata.ColumnIdent;
 import io.crate.operation.ImplementationSymbolVisitor;
 import io.crate.operation.Input;
 import io.crate.operation.collect.CollectExpression;
+import io.crate.operation.projectors.join.NestedLoopProjector;
 import io.crate.planner.consumer.OrderByPositionVisitor;
 import io.crate.planner.projection.*;
 import io.crate.planner.symbol.*;
@@ -349,6 +350,11 @@ public class ProjectionToProjectorVisitor
                 projection.executionNodes(),
                 projection.bulkSize(),
                 projection.closeContexts());
+    }
+
+    @Override
+    public Projector visitNestedLoopProjection(NestedLoopProjection projection, Context context) {
+        return new NestedLoopProjector();
     }
 
     @Override

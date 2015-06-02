@@ -144,7 +144,13 @@ public class NestedLoop extends PlanAndPlannedAnalyzedRelation {
 
     @Override
     public DQLPlanNode resultNode() {
-        return localMergeNode == null ? outer().resultNode() : localMergeNode;
+        if (localMergeNode != null) {
+            return localMergeNode;
+        } else if (nestedLoopNode != null) {
+            return nestedLoopNode;
+        } else {
+            return outer().resultNode();
+        }
     }
 
     @Override

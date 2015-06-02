@@ -275,6 +275,7 @@ public class StreamerVisitor {
         List<Aggregation> aggregations;
         switch (projection.projectionType()) {
             case TOPN:
+            case NESTED_LOOP:
             case FETCH:
                 aggregations = ImmutableList.of();
                 break;

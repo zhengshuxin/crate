@@ -24,12 +24,10 @@ package io.crate.planner.consumer;
 import com.google.common.base.MoreObjects;
 import com.google.common.collect.ImmutableList;
 import io.crate.Constants;
-import io.crate.analyze.OrderBy;
-import io.crate.analyze.QueriedTable;
-import io.crate.analyze.QuerySpec;
+import io.crate.analyze.*;
 import io.crate.analyze.relations.AnalyzedRelation;
 import io.crate.analyze.relations.AnalyzedRelationVisitor;
-import io.crate.analyze.relations.PlannedAnalyzedRelation;
+import io.crate.exceptions.ValidationException;
 import io.crate.exceptions.VersionInvalidException;
 import io.crate.metadata.ColumnIdent;
 import io.crate.metadata.DocReferenceConverter;
@@ -57,42 +55,68 @@ import java.util.*;
 
 public class QueryThenFetchConsumer implements Consumer {
 
-    private static final Visitor VISITOR = new Visitor();
     private static final OutputOrderReferenceCollector OUTPUT_ORDER_REFERENCE_COLLECTOR = new OutputOrderReferenceCollector();
     private static final ReferencesCollector REFERENCES_COLLECTOR = new ReferencesCollector();
     private static final ScoreReferenceDetector SCORE_REFERENCE_DETECTOR = new ScoreReferenceDetector();
     private static final ColumnIdent DOC_ID_COLUMN_IDENT = new ColumnIdent(DocSysColumns.DOCID.name());
     private static final InputColumn DEFAULT_DOC_ID_INPUT_COLUMN = new InputColumn(0, DataTypes.STRING);
+    private final Visitor visitor;
+
+    public QueryThenFetchConsumer(AnalysisMetaData analysisMetaData) {
+        this.visitor = new Visitor(analysisMetaData);
+    }
 
     @Override
     public boolean consume(AnalyzedRelation rootRelation, ConsumerContext context) {
-        PlannedAnalyzedRelation plannedAnalyzedRelation = VISITOR.process(rootRelation, context);
-        if (plannedAnalyzedRelation == null) {
-            return false;
-        }
-        context.rootRelation(plannedAnalyzedRelation);
-        return true;
+        Context ctx = new Context(context);
+        context.rootRelation(visitor.process(context.rootRelation(), ctx));
+        return ctx.result;
     }
 
-    private static class Visitor extends AnalyzedRelationVisitor<ConsumerContext, PlannedAnalyzedRelation> {
+    private static class Context {
+
+        private final ConsumerContext consumerContext;
+        boolean result = false;
+
+        public Context(ConsumerContext consumerContext) {
+            this.consumerContext = consumerContext;
+        }
+
+        public ConsumerContext consumerContext() {
+            return consumerContext;
+        }
+
+        public void result(boolean result) {
+            this.result = result;
+        }
+    }
+
+    private static class Visitor extends AnalyzedRelationVisitor<Context, AnalyzedRelation> {
+
+        private final AnalysisMetaData analysisMetaData;
+
+        public Visitor(AnalysisMetaData analysisMetaData) {
+            this.analysisMetaData = analysisMetaData;
+        }
 
         @Override
-        public PlannedAnalyzedRelation visitQueriedTable(QueriedTable table, ConsumerContext context) {
+        public AnalyzedRelation visitQueriedTable(QueriedTable table, Context context) {
             QuerySpec querySpec = table.querySpec();
             if (querySpec.hasAggregates() || querySpec.groupBy()!=null) {
-                return null;
+                return table;
             }
             TableInfo tableInfo = table.tableRelation().tableInfo();
             if (tableInfo.schemaInfo().systemSchema() || tableInfo.rowGranularity() != RowGranularity.DOC) {
-                return null;
+                return table;
             }
 
             if(querySpec.where().hasVersions()){
-                context.validationException(new VersionInvalidException());
-                return null;
+                context.consumerContext().validationException(new VersionInvalidException());
+                return table;
             }
 
             if (querySpec.where().noMatch()) {
+                context.result(true);
                 return new NoopPlannedAnalyzedRelation(table);
             }
 
@@ -151,7 +175,7 @@ public class QueryThenFetchConsumer implements Consumer {
 
             final CollectNode collectNode = PlanNodeBuilder.collect(
                     tableInfo,
-                    context.plannerContext(),
+                    context.consumerContext().plannerContext(),
                     querySpec.where(),
                     collectSymbols,
                     ImmutableList.<Projection>of(),
@@ -162,6 +186,18 @@ public class QueryThenFetchConsumer implements Consumer {
 
             collectNode.keepContextForFetcher(needFetchProjection);
             collectNode.projections(collectProjections);
+            // If this is not the root relation return a QTF-Node which contains only a collectNode
+            // MergeNode has to be created by the parent relation
+            QueryThenFetch.Context qtfContext = new QueryThenFetch.Context(
+                    outputSymbols,
+                    collectSymbols,
+                    orderBy,
+                    tableInfo.partitionedByColumns(),
+                    table.fields());
+            if (context.consumerContext().rootRelation() != table) {
+                QueryThenFetch qtf = new QueryThenFetch(collectNode, null, qtfContext);
+                return qtf;
+            }
             // MAP/COLLECT related END
 
             // HANDLER/MERGE/FETCH related
@@ -186,15 +222,15 @@ public class QueryThenFetchConsumer implements Consumer {
 
                 // TODO: create FetchProjectionBuilder
                 FetchProjection fetchProjection = new FetchProjection(
-                        context.plannerContext().jobSearchContextIdToExecutionNodeId(),
+                        context.consumerContext().plannerContext().jobSearchContextIdToExecutionNodeId(),
                         DEFAULT_DOC_ID_INPUT_COLUMN, collectSymbols, outputSymbols,
                         tableInfo.partitionedByColumns(),
                         new HashMap<Integer, List<String>>(){{
                             put(collectNode.executionNodeId(), new ArrayList<>(collectNode.executionNodes()));}},
                         bulkSize,
                         querySpec.isLimited(),
-                        context.plannerContext().jobSearchContextIdToNode(),
-                        context.plannerContext().jobSearchContextIdToShard()
+                        context.consumerContext().plannerContext().jobSearchContextIdToNode(),
+                        context.consumerContext().plannerContext().jobSearchContextIdToShard()
                 );
                 mergeProjections.add(fetchProjection);
             } else {
@@ -215,26 +251,38 @@ public class QueryThenFetchConsumer implements Consumer {
                         collectSymbols,
                         null,
                         collectNode,
-                        context.plannerContext());
+                        context.consumerContext().plannerContext());
             } else {
                 localMergeNode = PlanNodeBuilder.localMerge(
                         mergeProjections,
                         collectNode,
-                        context.plannerContext());
+                        context.consumerContext().plannerContext());
             }
             // HANDLER/MERGE/FETCH related END
 
             Integer limit = querySpec.limit();
             if (limit != null && limit + querySpec.offset() > Constants.PAGE_SIZE) {
-                collectNode.downstreamNodes(Collections.singletonList(context.plannerContext().clusterService().localNode().id()));
+                collectNode.downstreamNodes(Collections.singletonList(context.consumerContext().plannerContext().clusterService().localNode().id()));
                 collectNode.downstreamExecutionNodeId(localMergeNode.executionNodeId());
             }
-            return new QueryThenFetch(collectNode, localMergeNode);
+            context.result(true);
+            QueryThenFetch qtf = new QueryThenFetch(collectNode, localMergeNode, qtfContext);
+            return qtf;
         }
 
         @Override
-        protected PlannedAnalyzedRelation visitAnalyzedRelation(AnalyzedRelation relation, ConsumerContext context) {
-            return null;
+        protected AnalyzedRelation visitAnalyzedRelation(AnalyzedRelation relation, Context context) {
+            return relation;
+        }
+
+        @Override
+        public AnalyzedRelation visitMultiSourceSelect(MultiSourceSelect multiSourceSelect, Context context) {
+            try {
+                CrossJoinConsumer.planInnerRelations(multiSourceSelect, context, this, analysisMetaData);
+            } catch (ValidationException e) {
+                context.consumerContext().validationException(e);
+            }
+            return multiSourceSelect;
         }
     }
 
