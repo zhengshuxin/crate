@@ -224,6 +224,7 @@ public class TransportExecutorTest extends BaseTransportExecutorTest {
         assertThat(rows, contains(isRow(2, "Ford")));
     }
 
+    
     private FetchProjection getFetchProjection(DocTableInfo characters, List<Symbol> collectSymbols, List<Symbol> outputSymbols, CollectNode collectNode, Planner.Context ctx) {
         Map<Integer, List<String>> executionNodes = new HashMap<>();
         executionNodes.put(collectNode.executionNodeId(), new ArrayList<>(collectNode.executionNodes()));
