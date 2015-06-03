@@ -145,8 +145,7 @@ public class FetchProjection extends Projection {
 
         if (closeContexts != that.closeContexts) return false;
         if (bulkSize != that.bulkSize) return false;
-        if (!jobSearchContextIdToExecutionNodeId.equals(that.jobSearchContextIdToExecutionNodeId)) return false;
-        if (!executionNodes.equals(that.executionNodes)) return false;
+        if (executionNodes != that.executionNodes) return false;
         if (!docIdSymbol.equals(that.docIdSymbol)) return false;
         if (!inputSymbols.equals(that.inputSymbols)) return false;
         if (!outputSymbols.equals(that.outputSymbols)) return false;
@@ -157,7 +156,6 @@ public class FetchProjection extends Projection {
     @Override
     public int hashCode() {
         int result = super.hashCode();
-        result = 31 * result + jobSearchContextIdToExecutionNodeId.hashCode();
         result = 31 * result + docIdSymbol.hashCode();
         result = 31 * result + inputSymbols.hashCode();
         result = 31 * result + outputSymbols.hashCode();

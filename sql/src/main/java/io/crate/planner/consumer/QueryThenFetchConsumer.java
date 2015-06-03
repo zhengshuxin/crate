@@ -215,7 +215,7 @@ public class QueryThenFetchConsumer implements Consumer {
 
                 // TODO: create FetchProjectionBuilder
                 FetchProjection fetchProjection = new FetchProjection(
-                        context.plannerContext().jobSearchContextIdToExecutionNodeId(),
+                        context.consumerContext().plannerContext().jobSearchContextIdToExecutionNodeId(),
                         DEFAULT_DOC_ID_INPUT_COLUMN, collectSymbols, outputSymbols,
                         tableInfo.partitionedByColumns(),
                         new HashMap<Integer, List<String>>(){{

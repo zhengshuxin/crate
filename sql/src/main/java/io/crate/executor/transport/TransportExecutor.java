@@ -49,6 +49,7 @@ import io.crate.planner.node.StreamerVisitor;
 import io.crate.planner.node.ddl.*;
 import io.crate.planner.node.dml.*;
 import io.crate.planner.node.dql.*;
+import io.crate.planner.node.dql.join.NestedLoop;
 import io.crate.planner.node.management.KillPlan;
 import org.elasticsearch.action.bulk.BulkRetryCoordinatorPool;
 import org.elasticsearch.cluster.ClusterService;
@@ -270,6 +271,11 @@ public class TransportExecutor implements Executor, TaskExecutor {
                                             plan.collectNode(),
                                             plan.reducerMergeNode())),
                             mergeNodes));
+        }
+
+        @Override
+        public List<Task> visitNestedLoop(NestedLoop nestedLoop, Job context) {
+            return super.visitNestedLoop(nestedLoop, context);
         }
 
         @Override
