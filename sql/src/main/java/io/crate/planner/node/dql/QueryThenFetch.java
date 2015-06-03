@@ -24,12 +24,16 @@ package io.crate.planner.node.dql;
 import io.crate.planner.PlanAndPlannedAnalyzedRelation;
 import io.crate.planner.PlanVisitor;
 import io.crate.planner.projection.Projection;
+import io.crate.planner.symbol.Symbol;
 import org.elasticsearch.common.Nullable;
+
+import java.util.List;
 
 public class QueryThenFetch extends PlanAndPlannedAnalyzedRelation {
 
     private final CollectNode collectNode;
     private @Nullable MergeNode mergeNode;
+    private @Nullable List<Symbol> outputs;
 
     public QueryThenFetch(CollectNode collectNode, @Nullable MergeNode mergeNode) {
         this.collectNode = collectNode;
@@ -40,12 +44,29 @@ public class QueryThenFetch extends PlanAndPlannedAnalyzedRelation {
         return collectNode;
     }
 
-    public @Nullable MergeNode mergeNode() {
+    @Nullable
+    public MergeNode mergeNode() {
         return mergeNode;
     }
 
     public void mergeNode(MergeNode mergeNode) {
         this.mergeNode = mergeNode;
+    }
+
+    /**
+     * In some cases the QTF-Consumer doesn't add a mergeNode, so also
+     * no FetchProjection is added. The FetchProjection will be created
+     * by another consumer (e.g. CrossJoin).
+     * In this cases only the outputs of the fetchProjection are stored.
+     * @return a list of outputs which should be fetched by the fetchedProjection
+     */
+    @Nullable
+    public List<Symbol> outputs() {
+        return outputs;
+    }
+
+    public void outputs(List<Symbol> outputs) {
+        this.outputs = outputs;
     }
 
     @Override

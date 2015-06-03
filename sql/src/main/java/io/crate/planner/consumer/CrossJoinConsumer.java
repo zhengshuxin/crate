@@ -23,6 +23,7 @@ package io.crate.planner.consumer;
 
 import com.google.common.base.MoreObjects;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
 import io.crate.Constants;
 import io.crate.analyze.*;
 import io.crate.analyze.relations.AnalyzedRelation;
@@ -30,17 +31,21 @@ import io.crate.analyze.relations.AnalyzedRelationVisitor;
 import io.crate.analyze.relations.PlannedAnalyzedRelation;
 import io.crate.analyze.relations.TableRelation;
 import io.crate.exceptions.ValidationException;
+import io.crate.metadata.ReferenceInfo;
+import io.crate.operation.projectors.FetchProjector;
 import io.crate.operation.projectors.TopN;
 import io.crate.planner.Plan;
 import io.crate.planner.PlanNodeBuilder;
+import io.crate.planner.Planner;
 import io.crate.planner.node.NoopPlannedAnalyzedRelation;
 import io.crate.planner.node.dql.MergeNode;
+import io.crate.planner.node.dql.QueryThenFetch;
 import io.crate.planner.node.dql.join.NestedLoop;
-import io.crate.planner.projection.FilterProjection;
-import io.crate.planner.projection.Projection;
-import io.crate.planner.projection.TopNProjection;
+import io.crate.planner.projection.*;
 import io.crate.planner.symbol.*;
 import io.crate.sql.tree.QualifiedName;
+import io.crate.types.DataTypes;
+import org.elasticsearch.common.Nullable;
 
 import java.util.*;
 
@@ -49,6 +54,8 @@ public class CrossJoinConsumer implements Consumer {
 
     private final CrossJoinVisitor visitor;
     private final static InputColumnProducer INPUT_COLUMN_PRODUCER = new InputColumnProducer();
+    private static final InputColumn DEFAULT_DOC_ID_INPUT_COLUMN = new InputColumn(0, DataTypes.STRING);
+
 
     public CrossJoinConsumer(AnalysisMetaData analysisMetaData) {
         visitor = new CrossJoinVisitor(analysisMetaData);
@@ -209,7 +216,7 @@ public class CrossJoinConsumer implements Consumer {
 
             ImmutableList.Builder<Projection> projectionBuilder = ImmutableList.builder();
 
-            if (hasRemainingQuery) {
+            if (hasRemainingQuery) { // TODO: equi join ^^
                 Symbol filter = replaceFieldsWithInputColumns(where.query(), queriedTablesOutputs);
                 projectionBuilder.add(new FilterProjection(filter));
             }
@@ -286,10 +293,16 @@ public class CrossJoinConsumer implements Consumer {
             }
 
             // check that every inner relation is planned
+            List<Symbol> allCollectorOutputs = new ArrayList<>();
             for (AnalyzedRelation relation : statement.sources().values()) {
-                if (!(relation instanceof PlannedAnalyzedRelation)) {
+                if (relation instanceof PlannedAnalyzedRelation) {
+                    if (relation instanceof QueryThenFetch) {
+                        allCollectorOutputs.addAll(((QueryThenFetch) relation).collectNode().toCollect());
+                    } else if (relation instanceof NoopPlannedAnalyzedRelation) {
+                        return (NoopPlannedAnalyzedRelation)relation;
+                    }
+                } else {
                     return null;
-                    // TODO: check whereClause No match for each relation
                 }
             }
 
@@ -309,23 +322,55 @@ public class CrossJoinConsumer implements Consumer {
                 if (nl == null) {
                     assert iterator.hasNext();
                     PlannedAnalyzedRelation secondAnalyzedRelation = (PlannedAnalyzedRelation)iterator.next();
+                    final NestedLoopProjection proj = createNestedLoopProjection(plannedAnalyzedRelation, secondAnalyzedRelation);
+                    List<Projection> projections = new ArrayList(){{add(proj);}};
+                    finalizeInnerPlan(secondAnalyzedRelation, projections, context.plannerContext());
+                    finalizeInnerPlan(plannedAnalyzedRelation, projections, context.plannerContext());
                     nl = new NestedLoop(plannedAnalyzedRelation, secondAnalyzedRelation, true);
                 } else {
                     // use the already created nestedLoop as left innerPlan
+                    NestedLoopProjection proj = createNestedLoopProjection(nl, plannedAnalyzedRelation);
                     nl = new NestedLoop(nl, plannedAnalyzedRelation, true);
                 }
             }
 
-            // TODO: add FetchProjection to localMergeProjection
-
             List<Projection> mergeProjections = new ArrayList<>();
 
             int rootLimit = MoreObjects.firstNonNull(statement.querySpec().limit(), Constants.DEFAULT_SELECT_LIMIT);
+
             TopNProjection topNProjection = new TopNProjection(rootLimit, statement.querySpec().offset());
+
+            // TODO: List<Symbol> postOutputs = replaceFieldsWithInputColumns(statement.querySpec().outputs(), allCollectorOutputs);
+            // TODO: add postOutputs to topNProjection
+            topNProjection.outputs(allCollectorOutputs);
+
             mergeProjections.add(topNProjection);
 
-            // TODO: consider orderBy
-            MergeNode localMergeNode = PlanNodeBuilder.localMerge(mergeProjections, nl.resultNode(), context.plannerContext());
+            int bulkSize = FetchProjector.NO_BULK_REQUESTS;
+            if (topNProjection.limit() > Constants.DEFAULT_SELECT_LIMIT) {
+                bulkSize = Constants.DEFAULT_SELECT_LIMIT;
+            }
+
+            FetchProjection fetchProjection = buildFetchProjection(statement.sources().values(), bulkSize, context.plannerContext());
+            if(fetchProjection != null) {
+                mergeProjections.add(fetchProjection);
+            }
+            MergeNode localMergeNode;
+            OrderBy orderBy = statement.querySpec().orderBy();
+            if (orderBy != null && orderBy.isSorted()) {
+                localMergeNode = PlanNodeBuilder.sortedLocalMerge(
+                        mergeProjections,
+                        orderBy,
+                        replaceFieldsWithInputColumns(orderBy.orderBySymbols(), allCollectorOutputs),
+                        null,
+                        nl.resultNode(),
+                        context.plannerContext());
+            } else {
+                localMergeNode = PlanNodeBuilder.localMerge(
+                        mergeProjections,
+                        nl.resultNode(),
+                        context.plannerContext());
+            }
             nl.mergeNode(localMergeNode);
             return nl;
         }
@@ -336,6 +381,39 @@ public class CrossJoinConsumer implements Consumer {
             return null;
         }
 
+        private void finalizeInnerPlan(PlannedAnalyzedRelation plan, List<Projection> projections, Planner.Context context) {
+            // TODO: create visitor instead of checking instanceof
+            if(plan instanceof QueryThenFetch) {
+                QueryThenFetch qtf = (QueryThenFetch)plan;
+                MergeNode mergeNode = PlanNodeBuilder.localMerge(
+                        projections,
+                        plan.resultNode(),
+                        context
+                );
+                mergeNode.downstreamNodes(qtf.collectNode().routing().nodes());
+                mergeNode.executionNodes(ImmutableSet.copyOf(qtf.collectNode().downstreamNodes()));
+                qtf.collectNode().downstreamExecutionNodeId(mergeNode.executionNodeId());
+                qtf.mergeNode(mergeNode);
+            }
+            return;
+        }
+
+        private NestedLoopProjection createNestedLoopProjection(PlannedAnalyzedRelation left, PlannedAnalyzedRelation right) {
+            NestedLoopProjection projection = new NestedLoopProjection();
+            projection.outputs(getAllOutputs(left, right));
+            return projection;
+        }
+
+        private List<Symbol> getAllOutputs(PlannedAnalyzedRelation...relations) {
+            ImmutableList.Builder<Symbol> builder = ImmutableList.builder();
+            for (PlannedAnalyzedRelation relation : relations) {
+                if (relation instanceof QueryThenFetch) {
+                    builder.addAll(((QueryThenFetch) relation).collectNode().toCollect());
+                }
+            }
+            return builder.build();
+        }
+
 
         private List<Symbol> getAllOutputs(Collection<QueriedTable> queriedTables) {
             ImmutableList.Builder<Symbol> builder = ImmutableList.builder();
@@ -343,6 +421,39 @@ public class CrossJoinConsumer implements Consumer {
                 builder.addAll(table.fields());
             }
             return builder.build();
+        }
+
+        @Nullable
+        private FetchProjection buildFetchProjection(Collection<AnalyzedRelation> planNodes, int bulkSize, Planner.Context context) {
+            List<Symbol> collectSymbols = new ArrayList<>();
+            List<Symbol> outputSymbols = new ArrayList<>();
+            Set<String> executionNodes = new HashSet<>();
+            for (AnalyzedRelation planNode : planNodes) {
+                if (planNode instanceof QueryThenFetch) {
+                    QueryThenFetch qtf = (QueryThenFetch)planNode;
+                    collectSymbols.addAll(qtf.collectNode().toCollect());
+                    outputSymbols.addAll(qtf.outputs());
+                    executionNodes.addAll(qtf.collectNode().executionNodes());
+                }
+            }
+
+            if (collectSymbols.size() >= outputSymbols.size()) {
+                return null;
+            }
+
+            // TODO: move to QueryThenFetchConsumer
+            FetchProjection fetchProjection = new FetchProjection(
+                    0, // TODO: update FetchProjection and add map with correct executionNodeIds
+                    DEFAULT_DOC_ID_INPUT_COLUMN,
+                    collectSymbols, outputSymbols,
+                    new ArrayList<ReferenceInfo>(0), // TODO: add correct partitionedByColumns
+                    executionNodes,
+                    bulkSize,
+                    true, // TODO: do it correctly
+                    context.jobSearchContextIdToNode(),
+                    context.jobSearchContextIdToShard()
+                    );
+            return fetchProjection;
         }
 
         /**

@@ -34,13 +34,13 @@ import io.crate.operation.operator.OperatorModule;
 import io.crate.operation.operator.OrOperator;
 import io.crate.operation.predicate.PredicateModule;
 import io.crate.operation.scalar.ScalarFunctionModule;
-import io.crate.operation.scalar.arithmetic.AddFunction;
 import io.crate.planner.*;
 import io.crate.planner.node.PlanNode;
 import io.crate.planner.node.dql.AbstractDQLPlanNode;
 import io.crate.planner.node.dql.ESGetNode;
 import io.crate.planner.node.dql.QueryThenFetch;
 import io.crate.planner.node.dql.join.NestedLoop;
+import io.crate.planner.projection.FetchProjection;
 import io.crate.planner.projection.FilterProjection;
 import io.crate.planner.projection.Projection;
 import io.crate.planner.projection.TopNProjection;
@@ -67,7 +67,7 @@ import java.util.List;
 import static io.crate.testing.TestingHelpers.isFunction;
 import static io.crate.testing.TestingHelpers.isLiteral;
 import static org.hamcrest.Matchers.*;
-import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
 
 public class CrossJoinConsumerTest {
@@ -109,58 +109,57 @@ public class CrossJoinConsumerTest {
 
     @Test
     public void testExplicitCrossJoinWithoutLimitOrOrderBy() throws Exception {
-        NestedLoop nestedLoop = (NestedLoop)plan("select * from users cross join parted");
+         NestedLoop nestedLoop = (NestedLoop)plan("select * from users cross join parted");
 
         TopNProjection topNProjection = (TopNProjection)nestedLoop.mergeNode().projections().get(0);
         assertThat(topNProjection.limit(), is(Constants.DEFAULT_SELECT_LIMIT));
         assertThat(topNProjection.offset(), is(0));
 
-        assertThat(nestedLoop.mergeNode().outputTypes().size(), is(10));
+        assertThat(nestedLoop.mergeNode().outputTypes().size(), is(8));
 
         QueryThenFetch left = (QueryThenFetch)nestedLoop.left();
         QueryThenFetch right = (QueryThenFetch)nestedLoop.right();
 
-        // TODO: test left.mergeNodes.nlProjection == right.mergeNodes.nlProjection
+        assertThat(left.collectNode().limit(), is(Constants.DEFAULT_SELECT_LIMIT)); // TODO: Default Limit should be added by CrossJoinConsumer
+        assertThat(right.collectNode().limit(), is(Constants.DEFAULT_SELECT_LIMIT));
 
-        assertThat(left.collectNode().limit(), is(nullValue())); // TODO: is that true?!
-        // TODO: assertThat(leftQTF.mergeNode().offset(), is(0));
-
-        assertThat(right.collectNode().limit(), is(nullValue())); // TODO: is that true?!
-        // TODO: assertThat(rightQTF.offset(), is(0));
-
-        // what's left and right changes per test run... so just make sure the outputs are different
-        assertNotEquals(left.collectNode().outputTypes(), right.collectNode().outputTypes());
+        // The same NestedLoopProjection is used for left and right
+        assertEquals(left.mergeNode().projections().get(0), right.mergeNode().projections().get(0));
     }
 
     @Test
     public void testCrossJoinWithJoinCriteriaInOrderBy() throws Exception {
-        IterablePlan plan = (IterablePlan)plan("select u1.id + u2.id, u1.name from users u1, users u2 order by 1");
-        NestedLoop nl = (NestedLoop) plan.iterator().next();
 
-        // check limit
-        // TODO: assertThat(nl.limit(), is(Constants.DEFAULT_SELECT_LIMIT));
-        TopNProjection topN = (TopNProjection)nl.resultNode().projections().get(0);
+        QueryThenFetch qtf = (QueryThenFetch)plan("select id + 5 from users order by 1");
+
+        NestedLoop nl = (NestedLoop)plan("select u1.id + u2.id, u1.name from users u1, users u2 order by 1");
+
+        TopNProjection topN = (TopNProjection)nl.mergeNode().projections().get(0);
         assertThat(topN.limit(), is(Constants.DEFAULT_SELECT_LIMIT));
         assertThat(topN.offset(), is(0));
 
-        QueryThenFetch leftQTF = (QueryThenFetch)((IterablePlan) nl.left()).iterator().next();
-        assertThat(leftQTF.collectNode().limit(), is(nullValue()));
-        //TODO: test assertThat(leftQTF.offset(), is(TopN.NO_OFFSET));
+        QueryThenFetch leftQTF = (QueryThenFetch)(nl.left());
+        assertThat(leftQTF.collectNode().limit(), is(Constants.DEFAULT_SELECT_LIMIT));
 
-        QueryThenFetch rightQTF = (QueryThenFetch)((IterablePlan) nl.right()).iterator().next();
-        assertThat(rightQTF.collectNode().limit(), is(nullValue()));
-        // TODO: assertThat(rightQTF.offset(), is(TopN.NO_OFFSET));
+        QueryThenFetch rightQTF = (QueryThenFetch)(nl.right());
+        assertThat(rightQTF.collectNode().limit(), is(Constants.DEFAULT_SELECT_LIMIT));
 
         TopNProjection topNProjection = (TopNProjection) nl.resultNode().projections().get(0);
 
-        assertThat(topNProjection.isOrdered(), is(true));
+        // sorting is done by the mergeProjections
+        // TODO: verify correct ordering
+        // TODO: verify correct outputs
+        /*assertThat(topNProjection.isOrdered(), is(false));
+
+        MergeNode mergeProjection = nl.mergeNode();
+
         Symbol orderBy = topNProjection.orderBy().get(0);
         assertThat(orderBy, isFunction(AddFunction.NAME));
         Function function = (Function) orderBy;
 
         for (Symbol arg : function.arguments()) {
             assertThat(arg, instanceOf(InputColumn.class));
-        }
+        }*/
     }
 
     @Test
@@ -230,19 +229,23 @@ public class CrossJoinConsumerTest {
         // TODO: assertThat(qtf.offset(), is(0));
     }
 
+    // TODO: test a plan without fetch phase
+
     @Test
     public void testCrossJoinTwoTablesWithLimit() throws Exception {
         NestedLoop nl = (NestedLoop)plan("select * from users u1, users u2 limit 2");
-        // TODO: assertThat(nl.limit(), is(2));
-
         QueryThenFetch left = (QueryThenFetch)nl.left();
         QueryThenFetch right = (QueryThenFetch)nl.right();
 
         assertThat(left.collectNode().limit(), is(2));
         assertThat(right.collectNode().limit(), is(2)); // TODO: is that really true???
 
-        assertThat(nl.resultNode().projections().size(), is(1));
+        assertThat(nl.resultNode().projections().size(), is(2));
         assertThat(nl.resultNode().projections().get(0), instanceOf(TopNProjection.class));
+        assertThat(nl.resultNode().projections().get(1), instanceOf(FetchProjection.class));
+
+        TopNProjection topNProjection = (TopNProjection)nl.mergeNode().projections().get(0);
+        assertThat(topNProjection.limit(), is(2));
     }
 
     @Test

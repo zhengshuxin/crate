@@ -247,7 +247,7 @@ public class MergeNode extends AbstractDQLPlanNode {
     @Override
     public String toString() {
         MoreObjects.ToStringHelper helper = MoreObjects.toStringHelper(this)
-                .add("executionNodeId", executionNodeId())
+                .add("jobSearchContextIdToExecutionNodeId", executionNodeId())
                 .add("name", name())
                 .add("projections", projections)
                 .add("outputTypes", outputTypes)

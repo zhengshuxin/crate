@@ -189,7 +189,9 @@ public class QueryThenFetchConsumer implements Consumer {
             // If this is not the root relation return a QTF-Node which contains only a collectNode
             // MergeNode has to be added from the parent relation
             if (context.consumerContext().rootRelation() != table) {
-                return new QueryThenFetch(collectNode, null);
+                QueryThenFetch qtf = new QueryThenFetch(collectNode, null);
+                qtf.outputs(outputSymbols);
+                return qtf;
             }
             // MAP/COLLECT related END
 
