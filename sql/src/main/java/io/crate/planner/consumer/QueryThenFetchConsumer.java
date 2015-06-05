@@ -188,9 +188,9 @@ public class QueryThenFetchConsumer implements Consumer {
             collectNode.projections(collectProjections);
             // If this is not the root relation return a QTF-Node which contains only a collectNode
             // MergeNode has to be added from the parent relation
+            QueryThenFetch.Context qtfContext = new QueryThenFetch.Context(outputSymbols, tableInfo.partitionedByColumns());
             if (context.consumerContext().rootRelation() != table) {
-                QueryThenFetch qtf = new QueryThenFetch(collectNode, null);
-                qtf.outputs(outputSymbols);
+                QueryThenFetch qtf = new QueryThenFetch(collectNode, null, qtfContext);
                 return qtf;
             }
             // MAP/COLLECT related END
@@ -261,7 +261,8 @@ public class QueryThenFetchConsumer implements Consumer {
                 collectNode.downstreamExecutionNodeId(localMergeNode.executionNodeId());
             }
             context.result(true);
-            return new QueryThenFetch(collectNode, localMergeNode);
+            QueryThenFetch qtf = new QueryThenFetch(collectNode, localMergeNode, qtfContext);
+            return qtf;
         }
 
         @Override

@@ -48,7 +48,8 @@ public class CrossJoinIntegrationTest extends SQLTransportIntegrationTest {
         setup.setUpCharacters();
         setup.setUpBooks();
         waitNoPendingTasksOnAll();
-        execute("select title, characters.name from books, characters order by title, characters.name");
+//        execute("select * from characters");
+        execute("select characters.name, books.title from books, characters");
        // execute("select female, race['name'] from characters, locations");
        // assertThat(response.rowCount(), is(52L));
     }

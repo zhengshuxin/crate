@@ -21,6 +21,7 @@
 
 package io.crate.planner.node.dql;
 
+import io.crate.metadata.ReferenceInfo;
 import io.crate.planner.PlanAndPlannedAnalyzedRelation;
 import io.crate.planner.PlanVisitor;
 import io.crate.planner.projection.Projection;
@@ -33,11 +34,12 @@ public class QueryThenFetch extends PlanAndPlannedAnalyzedRelation {
 
     private final CollectNode collectNode;
     private @Nullable MergeNode mergeNode;
-    private @Nullable List<Symbol> outputs;
+    private final Context context;
 
-    public QueryThenFetch(CollectNode collectNode, @Nullable MergeNode mergeNode) {
+    public QueryThenFetch(CollectNode collectNode, @Nullable MergeNode mergeNode, Context context) {
         this.collectNode = collectNode;
         this.mergeNode = mergeNode;
+        this.context = context;
     }
 
     public CollectNode collectNode() {
@@ -53,20 +55,8 @@ public class QueryThenFetch extends PlanAndPlannedAnalyzedRelation {
         this.mergeNode = mergeNode;
     }
 
-    /**
-     * In some cases the QTF-Consumer doesn't add a mergeNode, so also
-     * no FetchProjection is added. The FetchProjection will be created
-     * by another consumer (e.g. CrossJoin).
-     * In this cases only the outputs of the fetchProjection are stored.
-     * @return a list of outputs which should be fetched by the fetchedProjection
-     */
-    @Nullable
-    public List<Symbol> outputs() {
-        return outputs;
-    }
-
-    public void outputs(List<Symbol> outputs) {
-        this.outputs = outputs;
+    public Context context() {
+        return context;
     }
 
     @Override
@@ -87,5 +77,26 @@ public class QueryThenFetch extends PlanAndPlannedAnalyzedRelation {
     @Override
     public DQLPlanNode resultNode() {
         return mergeNode == null ? collectNode : mergeNode;
+    }
+
+    public static class Context {
+
+        private final List<Symbol> outputs;
+
+        private final List<ReferenceInfo> partitionedByColumns;
+
+        public Context(List<Symbol> outputs, List<ReferenceInfo> partitionedByColumns) {
+            this.outputs = outputs;
+            this.partitionedByColumns = partitionedByColumns;
+        }
+
+        public List<Symbol> outputs() {
+            return outputs;
+        }
+
+        public List<ReferenceInfo> partitionedByColumns() {
+            return partitionedByColumns;
+        }
+
     }
 }

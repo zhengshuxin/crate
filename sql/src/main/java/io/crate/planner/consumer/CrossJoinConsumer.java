@@ -23,7 +23,8 @@ package io.crate.planner.consumer;
 
 import com.google.common.base.MoreObjects;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
 import io.crate.Constants;
 import io.crate.analyze.*;
 import io.crate.analyze.relations.AnalyzedRelation;
@@ -35,6 +36,7 @@ import io.crate.metadata.ReferenceInfo;
 import io.crate.operation.projectors.FetchProjector;
 import io.crate.operation.projectors.TopN;
 import io.crate.planner.Plan;
+import io.crate.planner.PlanAndPlannedAnalyzedRelation;
 import io.crate.planner.PlanNodeBuilder;
 import io.crate.planner.Planner;
 import io.crate.planner.node.NoopPlannedAnalyzedRelation;
@@ -42,6 +44,7 @@ import io.crate.planner.node.dql.MergeNode;
 import io.crate.planner.node.dql.QueryThenFetch;
 import io.crate.planner.node.dql.join.NestedLoop;
 import io.crate.planner.projection.*;
+import io.crate.planner.projection.builder.ProjectionBuilder;
 import io.crate.planner.symbol.*;
 import io.crate.sql.tree.QualifiedName;
 import io.crate.types.DataTypes;
@@ -314,23 +317,37 @@ public class CrossJoinConsumer implements Consumer {
             // TODO: calculate rootLimit
             // TODO: check remaining query
             // TODO: consider orderByOrder
+            ProjectionBuilder projectionBuilder = new ProjectionBuilder(statement.querySpec());
+
 
             NestedLoop nl = null;
             Iterator<AnalyzedRelation> iterator = statement.sources().values().iterator();
             while (iterator.hasNext()) {
-                PlannedAnalyzedRelation plannedAnalyzedRelation = (PlannedAnalyzedRelation)iterator.next();
+                PlanAndPlannedAnalyzedRelation plannedAnalyzedRelation = (PlanAndPlannedAnalyzedRelation)iterator.next();
                 if (nl == null) {
                     assert iterator.hasNext();
-                    PlannedAnalyzedRelation secondAnalyzedRelation = (PlannedAnalyzedRelation)iterator.next();
+                    PlanAndPlannedAnalyzedRelation secondAnalyzedRelation = (PlanAndPlannedAnalyzedRelation)iterator.next();
                     final NestedLoopProjection proj = createNestedLoopProjection(plannedAnalyzedRelation, secondAnalyzedRelation);
                     List<Projection> projections = new ArrayList(){{add(proj);}};
-                    finalizeInnerPlan(secondAnalyzedRelation, projections, context.plannerContext());
-                    finalizeInnerPlan(plannedAnalyzedRelation, projections, context.plannerContext());
-                    nl = new NestedLoop(plannedAnalyzedRelation, secondAnalyzedRelation, true);
+
+                    QueryThenFetch right = (QueryThenFetch)secondAnalyzedRelation;
+                    QueryThenFetch left = (QueryThenFetch)plannedAnalyzedRelation;
+                    finalizeInnerPlan(left, projections, context.plannerContext());
+
+                    final TopNProjection simpleTopNProjection = projectionBuilder.topNProjection(right.collectNode().toCollect(), null, 0, null, right.collectNode().toCollect());
+                    finalizeInnerPlan(secondAnalyzedRelation, new ArrayList<Projection>(){{add(simpleTopNProjection);}}, context.plannerContext());
+
+                    right.mergeNode().downstreamNodes(left.mergeNode().executionNodes());
+                    right.mergeNode().downstreamExecutionNodeId(left.mergeNode().executionNodeId());
+
+                    left.mergeNode().downstreamNodes(Sets.newHashSet(context.plannerContext().clusterService().state().nodes().localNodeId()));
+                    left.mergeNode().downstreamExecutionNodeId(right.mergeNode().executionNodeId() + 1);
+
+                    nl = new NestedLoop(plannedAnalyzedRelation, secondAnalyzedRelation, null, true);
                 } else {
                     // use the already created nestedLoop as left innerPlan
                     NestedLoopProjection proj = createNestedLoopProjection(nl, plannedAnalyzedRelation);
-                    nl = new NestedLoop(nl, plannedAnalyzedRelation, true);
+                    nl = new NestedLoop(nl, plannedAnalyzedRelation, null, true);
                 }
             }
 
@@ -338,11 +355,18 @@ public class CrossJoinConsumer implements Consumer {
 
             int rootLimit = MoreObjects.firstNonNull(statement.querySpec().limit(), Constants.DEFAULT_SELECT_LIMIT);
 
-            TopNProjection topNProjection = new TopNProjection(rootLimit, statement.querySpec().offset());
+            //TopNProjection topNProjection = new TopNProjection(rootLimit, statement.querySpec().offset());
 
             // TODO: List<Symbol> postOutputs = replaceFieldsWithInputColumns(statement.querySpec().outputs(), allCollectorOutputs);
             // TODO: add postOutputs to topNProjection
-            topNProjection.outputs(allCollectorOutputs);
+            //topNProjection.outputs(allCollectorOutputs);
+
+            TopNProjection topNProjection = projectionBuilder.topNProjection(
+                    allCollectorOutputs,
+                    null,
+                    statement.querySpec().offset(),
+                    rootLimit,
+                    null);
 
             mergeProjections.add(topNProjection);
 
@@ -385,17 +409,20 @@ public class CrossJoinConsumer implements Consumer {
             // TODO: create visitor instead of checking instanceof
             if(plan instanceof QueryThenFetch) {
                 QueryThenFetch qtf = (QueryThenFetch)plan;
-                MergeNode mergeNode = PlanNodeBuilder.localMerge(
-                        projections,
-                        plan.resultNode(),
-                        context
+
+                qtf.collectNode().downstreamNodes(Lists.newArrayList(qtf.collectNode().routing().nodes()));
+
+                MergeNode mergeNode = PlanNodeBuilder.distributedMerge(
+                        qtf.collectNode(),
+                        context,
+                        projections
                 );
-                mergeNode.downstreamNodes(qtf.collectNode().routing().nodes());
-                mergeNode.executionNodes(ImmutableSet.copyOf(qtf.collectNode().downstreamNodes()));
+
+                //mergeNode.downstreamNodes(Sets.newHashSet(context.clusterService().state().nodes().localNodeId()));
+                //mergeNode.downstreamExecutionNodeId(mergeNode.downstreamExecutionNodeId() + 1);
                 qtf.collectNode().downstreamExecutionNodeId(mergeNode.executionNodeId());
                 qtf.mergeNode(mergeNode);
             }
-            return;
         }
 
         private NestedLoopProjection createNestedLoopProjection(PlannedAnalyzedRelation left, PlannedAnalyzedRelation right) {
@@ -427,32 +454,28 @@ public class CrossJoinConsumer implements Consumer {
         private FetchProjection buildFetchProjection(Collection<AnalyzedRelation> planNodes, int bulkSize, Planner.Context context) {
             List<Symbol> collectSymbols = new ArrayList<>();
             List<Symbol> outputSymbols = new ArrayList<>();
-            Set<String> executionNodes = new HashSet<>();
+            List<ReferenceInfo> partitionedByColumns = new ArrayList<>(); // TODO: check that's correct
+            Map<Integer, List<String>> executionNodes = new HashMap<>();
             for (AnalyzedRelation planNode : planNodes) {
                 if (planNode instanceof QueryThenFetch) {
                     QueryThenFetch qtf = (QueryThenFetch)planNode;
                     collectSymbols.addAll(qtf.collectNode().toCollect());
-                    outputSymbols.addAll(qtf.outputs());
-                    executionNodes.addAll(qtf.collectNode().executionNodes());
+                    outputSymbols.addAll(qtf.context().outputs());
+                    executionNodes.put(qtf.collectNode().executionNodeId(), new ArrayList<>(qtf.collectNode().executionNodes()));
+                    partitionedByColumns.addAll(qtf.context().partitionedByColumns());
                 }
             }
 
-            if (collectSymbols.size() >= outputSymbols.size()) {
-                return null;
-            }
-
-            // TODO: move to QueryThenFetchConsumer
             FetchProjection fetchProjection = new FetchProjection(
-                    0, // TODO: update FetchProjection and add map with correct executionNodeIds
-                    DEFAULT_DOC_ID_INPUT_COLUMN,
-                    collectSymbols, outputSymbols,
-                    new ArrayList<ReferenceInfo>(0), // TODO: add correct partitionedByColumns
+                    context.jobSearchContextIdToExecutionNodeId(),
+                    DEFAULT_DOC_ID_INPUT_COLUMN, collectSymbols, outputSymbols,
+                    partitionedByColumns,
                     executionNodes,
                     bulkSize,
-                    true, // TODO: do it correctly
+                    true,
                     context.jobSearchContextIdToNode(),
                     context.jobSearchContextIdToShard()
-                    );
+            );
             return fetchProjection;
         }
 

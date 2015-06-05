@@ -301,7 +301,7 @@ public class Setup {
     }
 
     public void setUpCharacters() {
-        transportExecutor.exec("create table characters (id int primary key, name string, female boolean, details object)");
+        transportExecutor.exec("create table characters (id int primary key, name string, female boolean, details object) with (number_of_replicas=0)");
         transportExecutor.ensureGreen();
         transportExecutor.exec("insert into characters (id, name, female) values (?, ?, ?)",
                 new Object[][]{
@@ -315,7 +315,7 @@ public class Setup {
     }
 
     public void setUpBooks() {
-        transportExecutor.exec("create table books (id int primary key, title string, author string)");
+        transportExecutor.exec("create table books (id int primary key, title string, author string) with (number_of_replicas=0)");
         transportExecutor.ensureGreen();
         transportExecutor.exec("insert into books (id, title, author) values (?, ?, ?)", new Object[][]{
                 new Object[] { 1, "The Hitchhiker's Guide to the Galaxy", "Douglas Adams"},
@@ -326,7 +326,7 @@ public class Setup {
     }
 
     public void setUpPartitionedTableWithName() {
-        transportExecutor.exec("create table parted (id int, name string, date timestamp) partitioned by (date)");
+        transportExecutor.exec("create table parted (id int, name string, date timestamp) partitioned by (date) with (number_of_replicas=0)");
         transportExecutor.ensureGreen();
         transportExecutor.exec("insert into parted (id, name, date) values (?, ?, ?), (?, ?, ?), (?, ?, ?)",
                 new Object[]{

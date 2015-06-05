@@ -26,6 +26,7 @@ import com.google.common.collect.Iterables;
 import com.google.common.util.concurrent.ListenableFuture;
 import io.crate.action.job.ContextPreparer;
 import io.crate.action.sql.DDLStatementDispatcher;
+import io.crate.analyze.relations.PlannedAnalyzedRelation;
 import io.crate.breaker.CrateCircuitBreakerService;
 import io.crate.executor.*;
 import io.crate.executor.task.DDLTask;
@@ -274,8 +275,28 @@ public class TransportExecutor implements Executor, TaskExecutor {
         }
 
         @Override
-        public List<Task> visitNestedLoop(NestedLoop nestedLoop, Job context) {
-            return super.visitNestedLoop(nestedLoop, context);
+        public List<Task> visitNestedLoop(NestedLoop nestedLoop, Job job) {
+            //TaskCollectingVisitor taskCollectingVisitor = new TaskCollectingVisitor();
+            List<List<ExecutionNode>> executionNodes = new ArrayList<>();
+            executionNodes.add(0, new ArrayList<ExecutionNode>());
+            //List<Task> tasks = new ArrayList<>();
+
+            executionNodes.get(0).addAll(executionNodes(nestedLoop.left()));
+            executionNodes.get(0).addAll(executionNodes(nestedLoop.right()));
+            List<Task> tasks =  ImmutableList.<Task>of(
+                    createExecutableNodesTask(job,
+                            executionNodes,
+                            ImmutableList.of(nestedLoop.mergeNode())));
+            return tasks;
+        }
+
+        private List<ExecutionNode> executionNodes(PlannedAnalyzedRelation plan) {
+            // TODO: also check NestedLoopPlans
+            if (plan instanceof QueryThenFetch) {
+                QueryThenFetch qtf = (QueryThenFetch)plan;
+                return ImmutableList.<ExecutionNode>of(qtf.collectNode(), qtf.mergeNode());
+            }
+            return ImmutableList.of();
         }
 
         @Override
