@@ -37,19 +37,15 @@ public class NodeProcessExpression extends SysNodeObjectReference {
     public static final String OPEN_FILE_DESCRIPTORS = "open_file_descriptors";
     public static final String MAX_OPEN_FILE_DESCRIPTORS = "max_open_file_descriptors";
 
-    private final NodeService nodeService;
 
-    @Inject
-    protected NodeProcessExpression(final NodeService nodeService) {
-        this.nodeService = nodeService;
-        addChildImplementations();
+    public NodeProcessExpression(ProcessInfo processInfo, ProcessStats processStats) {
+        addChildImplementations(processInfo, processStats);
     }
 
-    private void addChildImplementations() {
+    private void addChildImplementations(final ProcessInfo processInfo, final ProcessStats processStats) {
         childImplementations.put(OPEN_FILE_DESCRIPTORS, new ProcessExpression() {
             @Override
             public Long value() {
-                ProcessStats processStats = nodeService.stats().getProcess();
                 if (processStats != null) {
                     return processStats.getOpenFileDescriptors();
                 } else { return -1L; }
@@ -58,7 +54,6 @@ public class NodeProcessExpression extends SysNodeObjectReference {
         childImplementations.put(MAX_OPEN_FILE_DESCRIPTORS, new ProcessExpression() {
             @Override
             public Long value() {
-                ProcessInfo processInfo = nodeService.info().getProcess();
                 if (processInfo != null) {
                     return processInfo.getMaxFileDescriptors();
                 } else { return -1L; }

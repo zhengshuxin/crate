@@ -42,6 +42,8 @@ import io.crate.operation.Input;
 import io.crate.operation.operator.AndOperator;
 import io.crate.operation.operator.EqOperator;
 import io.crate.operation.operator.OperatorModule;
+import io.crate.operation.reference.sys.node.NodeSysExpression;
+import io.crate.operation.reference.sys.node.SysNodeExpressionModule;
 import io.crate.testing.CollectingProjector;
 import io.crate.operation.projectors.ResultProvider;
 import io.crate.operation.projectors.ResultProviderFactory;
@@ -86,6 +88,7 @@ import org.elasticsearch.common.inject.*;
 import org.elasticsearch.common.inject.multibindings.MapBinder;
 import org.elasticsearch.common.settings.ImmutableSettings;
 import org.elasticsearch.common.settings.Settings;
+import org.elasticsearch.discovery.Discovery;
 import org.elasticsearch.discovery.DiscoveryService;
 import org.elasticsearch.index.Index;
 import org.elasticsearch.index.IndexService;
@@ -97,6 +100,9 @@ import org.elasticsearch.indices.IndicesLifecycle;
 import org.elasticsearch.indices.IndicesService;
 import org.elasticsearch.indices.breaker.CircuitBreakerService;
 import org.elasticsearch.indices.breaker.NoneCircuitBreakerService;
+import org.elasticsearch.monitor.network.NetworkService;
+import org.elasticsearch.monitor.os.OsService;
+import org.elasticsearch.node.service.NodeService;
 import org.elasticsearch.node.settings.NodeSettingsService;
 import org.elasticsearch.script.ScriptService;
 import org.elasticsearch.search.InternalSearchService;
@@ -228,6 +234,11 @@ public class LocalDataCollectTest extends CrateUnitTest {
             bind(TransportService.class).toInstance(mock(TransportService.class));
             bind(MapperService.class).toInstance(mock(MapperService.class));
 
+            bind(OsService.class).toInstance(mock(OsService.class));
+            bind(NodeService.class).toInstance(mock(NodeService.class));
+            bind(Discovery.class).toInstance(mock(Discovery.class));
+            bind(NetworkService.class).toInstance(mock(NetworkService.class));
+
             bind(TransportShardBulkAction.class).toInstance(mock(TransportShardBulkAction.class));
             bind(TransportCreateIndexAction.class).toInstance(mock(TransportCreateIndexAction.class));
 
@@ -242,7 +253,6 @@ public class LocalDataCollectTest extends CrateUnitTest {
             when(discoveryNodes.localNodeId()).thenReturn(TEST_NODE_ID);
             when(state.nodes()).thenReturn(discoveryNodes);
             when(clusterService.state()).thenReturn(state);
-
             when(clusterService.localNode()).thenReturn(discoveryNode);
             bind(ClusterService.class).toInstance(clusterService);
 
@@ -325,7 +335,8 @@ public class LocalDataCollectTest extends CrateUnitTest {
         Injector injector = new ModulesBuilder().add(
                 new CircuitBreakerModule(),
                 new OperatorModule(),
-                new TestModule()
+                new TestModule(),
+                new SysNodeExpressionModule()
         ).createInjector();
         Injector shard0Injector = injector.createChildInjector(
                 new TestShardModule(0)
@@ -354,7 +365,10 @@ public class LocalDataCollectTest extends CrateUnitTest {
                 mock(TransportActionProvider.class, Answers.RETURNS_DEEP_STUBS.get()),
                 injector.getInstance(BulkRetryCoordinatorPool.class),
                 functions,
-                injector.getInstance(ReferenceResolver.class), indicesService, testThreadPool,
+                injector.getInstance(ReferenceResolver.class),
+                injector.getInstance(NodeSysExpression.class),
+                indicesService,
+                testThreadPool,
                 new CollectServiceResolver(discoveryService,
                         new SystemCollectService(
                                 discoveryService,
@@ -391,7 +405,6 @@ public class LocalDataCollectTest extends CrateUnitTest {
     public void testCollectExpressions() throws Exception {
         CollectNode collectNode = new CollectNode(0, "collect", testRouting);
         collectNode.jobId(UUID.randomUUID());
-        collectNode.maxRowGranularity(RowGranularity.NODE);
         collectNode.toCollect(Arrays.<Symbol>asList(testNodeReference));
 
         Bucket result = getBucket(collectNode);
@@ -453,7 +466,6 @@ public class LocalDataCollectTest extends CrateUnitTest {
                 Arrays.<Symbol>asList(testNodeReference)
         );
         collectNode.toCollect(Arrays.<Symbol>asList(twoTimesTruthFunction, testNodeReference));
-        collectNode.maxRowGranularity(RowGranularity.NODE);
         Bucket result = getBucket(collectNode);
         assertThat(result.size(), equalTo(1));
         assertThat(result, contains(isRow(84, 42)));
@@ -519,7 +531,6 @@ public class LocalDataCollectTest extends CrateUnitTest {
                 Arrays.<Symbol>asList(Literal.newLiteral(true), Literal.newLiteral(true))
         )));
         collectNode.jobId(UUID.randomUUID());
-        collectNode.maxRowGranularity(RowGranularity.NODE);
         Bucket result = getBucket(collectNode);
         assertThat(result, contains(isRow(42)));
 

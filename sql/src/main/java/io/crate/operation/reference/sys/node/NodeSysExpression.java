@@ -21,39 +21,72 @@
 
 package io.crate.operation.reference.sys.node;
 
-import io.crate.metadata.ReferenceIdent;
-import io.crate.metadata.ReferenceImplementation;
-import io.crate.metadata.ReferenceInfo;
-import io.crate.metadata.ReferenceResolver;
-import io.crate.metadata.SimpleObjectExpression;
-import io.crate.metadata.sys.SysNodesTableInfo;
+import io.crate.metadata.*;
 import io.crate.operation.reference.NestedObjectExpression;
+import io.crate.operation.reference.sys.node.fs.NodeFsExpression;
+import org.elasticsearch.cluster.ClusterService;
 import org.elasticsearch.common.inject.Inject;
+import org.elasticsearch.discovery.Discovery;
+import org.elasticsearch.env.NodeEnvironment;
+import org.elasticsearch.monitor.jvm.JvmService;
+import org.elasticsearch.monitor.network.NetworkService;
+import org.elasticsearch.monitor.os.OsService;
+import org.elasticsearch.monitor.sigar.SigarService;
+import org.elasticsearch.node.service.NodeService;
+import org.elasticsearch.threadpool.ThreadPool;
 
 public class NodeSysExpression extends NestedObjectExpression {
 
-    private final SysNodesTableInfo tableInfo;
-    private final ReferenceResolver resolver;
+    private final NodeService nodeService;
+    private final OsService osService;
 
     @Inject
-    public NodeSysExpression(SysNodesTableInfo tableInfo, ReferenceResolver resolver) {
-        this.tableInfo = tableInfo;
-        this.resolver = resolver;
-        for (ReferenceInfo info : tableInfo.columns()) {
-            childImplementations.put(
-                    info.ident().columnIdent().name(),
-                    resolver.getImplementation(info.ident()));
-        }
+    public NodeSysExpression(ClusterService clusterService,
+                             SigarService sigarService,
+                             OsService osService,
+                             NodeService nodeService,
+                             JvmService jvmService,
+                             NetworkService networkService,
+                             NodeEnvironment nodeEnvironment,
+                             Discovery discovery,
+                             ThreadPool threadPool) {
+        this.nodeService = nodeService;
+        this.osService = osService;
+        childImplementations.put(NodeFsExpression.NAME,
+                new NodeFsExpression(sigarService, nodeEnvironment));
+        childImplementations.put(NodeHostnameExpression.NAME,
+                new NodeHostnameExpression(clusterService));
+        childImplementations.put(NodeRestUrlExpression.NAME,
+                new NodeRestUrlExpression(clusterService));
+        childImplementations.put(NodeIdExpression.NAME,
+                new NodeIdExpression(clusterService));
+        childImplementations.put(NodeLoadExpression.NAME,
+                new NodeLoadExpression(osService));
+        childImplementations.put(NodeMemoryExpression.NAME,
+                new NodeMemoryExpression(osService));
+        childImplementations.put(NodeNameExpression.NAME,
+                new NodeNameExpression(discovery));
+        childImplementations.put(NodePortExpression.NAME,
+                new NodePortExpression(nodeService));
+        childImplementations.put(NodeHeapExpression.NAME,
+                new NodeHeapExpression(jvmService));
+        childImplementations.put(NodeVersionExpression.NAME,
+                new NodeVersionExpression());
+        childImplementations.put(NodeThreadPoolsExpression.NAME,
+                new NodeThreadPoolsExpression(threadPool));
+        childImplementations.put(NodeNetworkExpression.NAME,
+                new NodeNetworkExpression(networkService));
     }
 
-    public ReferenceImplementation getImplementation(ReferenceIdent ident) {
-        if (!tableInfo.tableColumn().name().equals(ident.columnIdent().name())) {
-            return null;
+    @Override
+    public ReferenceImplementation getChildImplementation(String name) {
+        if (NodeOsExpression.NAME.equals(name)) {
+            return new NodeOsExpression(osService.stats());
+        } else if (NodeProcessExpression.NAME.equals(name)) {
+            return new NodeProcessExpression(nodeService.info().getProcess(),
+                    nodeService.stats().getProcess());
         }
-        if (ident.columnIdent().isColumn()) {
-            return this;
-        } else {
-            return resolver.getImplementation(tableInfo.tableColumn().getImplementationIdent(ident));
-        }
+        return super.getChildImplementation(name);
     }
+
 }
