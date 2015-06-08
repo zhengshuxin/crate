@@ -44,7 +44,7 @@ public class SQLTransportExecutor {
 
     private static final ESLogger LOGGER = Loggers.getLogger(SQLTransportExecutor.class);
     private final ClientProvider clientProvider;
-    private static final Long REQUEST_TIMEOUT = 300L;
+    private static final Long REQUEST_TIMEOUT = 5L;
 
     public static SQLTransportExecutor create(final TestCluster testCluster) {
         return new SQLTransportExecutor(new ClientProvider() {
