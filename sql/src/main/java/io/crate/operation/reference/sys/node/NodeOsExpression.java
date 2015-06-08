@@ -32,11 +32,11 @@ public class NodeOsExpression extends SysNodeObjectReference {
     public static final String NAME = "os";
 
     abstract class OsExpression extends SysNodeExpression<Object> {
-
     }
 
     public static final String UPTIME = "uptime";
     public static final String TIMESTAMP = "timestamp";
+    private static final String PROBE_TIMESTAMP = "probe_timestamp";
 
     @Inject
     public NodeOsExpression(OsStats stats) {
@@ -54,6 +54,12 @@ public class NodeOsExpression extends SysNodeObjectReference {
             @Override
             public Long value() {
                 return System.currentTimeMillis();
+            }
+        });
+        childImplementations.put(PROBE_TIMESTAMP, new OsExpression() {
+            @Override
+            public Long value() {
+                return os.timestamp();
             }
         });
         childImplementations.put(NodeOsCpuExpression.NAME,

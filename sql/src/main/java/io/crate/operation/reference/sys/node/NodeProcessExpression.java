@@ -22,10 +22,8 @@
 package io.crate.operation.reference.sys.node;
 
 import io.crate.operation.reference.sys.SysNodeObjectReference;
-import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.monitor.process.ProcessInfo;
 import org.elasticsearch.monitor.process.ProcessStats;
-import org.elasticsearch.node.service.NodeService;
 
 public class NodeProcessExpression extends SysNodeObjectReference {
 
@@ -36,6 +34,7 @@ public class NodeProcessExpression extends SysNodeObjectReference {
 
     public static final String OPEN_FILE_DESCRIPTORS = "open_file_descriptors";
     public static final String MAX_OPEN_FILE_DESCRIPTORS = "max_open_file_descriptors";
+    private static final String PROBE_TIMESTAMP = "probe_timestamp";
 
 
     public NodeProcessExpression(ProcessInfo processInfo, ProcessStats processStats) {
@@ -59,7 +58,14 @@ public class NodeProcessExpression extends SysNodeObjectReference {
                 } else { return -1L; }
             }
         });
-
+        childImplementations.put(PROBE_TIMESTAMP, new ProcessExpression() {
+            @Override
+            public Long value() {
+                if (processStats != null) {
+                    return processStats.timestamp();
+                } else { return -1L; }
+            }
+        });
     }
 
 }
