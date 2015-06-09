@@ -190,6 +190,7 @@ public class CrossJoinConsumer implements Consumer {
                         context.plannerContext());
             }
             nestedLoopNode.downstreamExecutionNodeId(localMergeNode.executionNodeId());
+            nestedLoopNode.downstreamNodes(localMergeNode.executionNodes());
             plan.localMergeNode(localMergeNode);
             return plan;
         }
@@ -217,6 +218,7 @@ public class CrossJoinConsumer implements Consumer {
                 mergeNode = PlanNodeBuilder.localMerge(projections, previous.resultNode(), context);
             }
             if(previous.resultNode() instanceof CollectNode) {
+                ((CollectNode)previous.resultNode()).downstreamNodes(Collections.singletonList(context.clusterService().localNode().id()));
                 ((CollectNode) previous.resultNode()).downstreamExecutionNodeId(mergeNode.executionNodeId());
             }
             return mergeNode;

@@ -113,10 +113,12 @@ public class PlanNodeBuilder {
         if(left != null) {
             left.downstreamExecutionNodeId(node.executionNodeId());
             node.leftMergeNode(left);
+            left.downstreamNodes(node.executionNodes());
         }
         if (right != null) {
             right.downstreamExecutionNodeId(node.executionNodeId());
             node.rightMergeNode(right);
+            right.downstreamNodes(node.executionNodes());
         }
         return node;
     }
