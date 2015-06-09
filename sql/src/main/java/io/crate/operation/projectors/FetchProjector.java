@@ -76,7 +76,7 @@ public class FetchProjector implements Projector, RowDownstreamHandle {
     private final AtomicInteger remainingUpstreams = new AtomicInteger(0);
     private final AtomicBoolean consumingRows = new AtomicBoolean(true);
     private final Map<Integer, List<String>> executionNodes;
-    private int numNodes;
+    private int numNodes = 0;
     private final AtomicInteger remainingRequests = new AtomicInteger(0);
     private final Map<String, Row> partitionRowsCache = new HashMap<>();
     private final Object partitionRowsCacheLock = new Object();
@@ -111,7 +111,6 @@ public class FetchProjector implements Projector, RowDownstreamHandle {
         this.jobSearchContextIdToShard = jobSearchContextIdToShard;
         this.bulkSize = bulkSize;
         this.closeContexts = closeContexts;
-        numNodes = 0;
         for (List<String> nodes : executionNodes.values()) {
             numNodes += nodes.size();
         }

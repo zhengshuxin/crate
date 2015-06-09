@@ -34,7 +34,6 @@ import java.util.ArrayList;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Nested Loop Projector that exposes a left and a right Projector
@@ -56,8 +55,6 @@ public class NestedLoopProjector implements Projector, RowUpstream {
     private final RowDownstreamHandle rightDownstreamHandle;
     private final ArrayList<Row> innerRows = new ArrayList<>();
     private final CombinedRow combinedRow = new CombinedRow();
-
-    private AtomicInteger remainingUpstreams = new AtomicInteger(0);
 
     private RowDownstreamHandle downstream = NoOpProjector.INSTANCE;
 
@@ -216,14 +213,8 @@ public class NestedLoopProjector implements Projector, RowUpstream {
 
     @Override
     public RowDownstreamHandle registerUpstream(RowUpstream upstream) {
-        if (remainingUpstreams.incrementAndGet() == 1) {
-            return rightDownstreamHandle;
-        } else if (remainingUpstreams.incrementAndGet() == 2) {
-            return leftDownstreamHandle;
-        } else {
-            throw new UnsupportedOperationException("registerUpstream not supported. " +
-                    "Use leftDownstreamHandle() or rightDownstreamHandle()");
-        }
+        throw new UnsupportedOperationException("registerUpstream not supported. " +
+                "Use leftDownstreamHandle() or rightDownstreamHandle()");
     }
 
 

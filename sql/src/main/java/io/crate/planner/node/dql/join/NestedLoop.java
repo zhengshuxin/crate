@@ -54,6 +54,7 @@ import org.elasticsearch.common.Nullable;
  */
 public class NestedLoop extends PlanAndPlannedAnalyzedRelation {
 
+
     private final PlannedAnalyzedRelation left;
     private final PlannedAnalyzedRelation right;
     private final NestedLoopNode nestedLoopNode;

@@ -198,7 +198,7 @@ public class FetchOperationIntegrationTest extends SQLTransportIntegrationTest {
 
         Analysis analysis = analyze("select id, name from characters");
         AnalysisMetaData analysisMetaData = internalCluster().getInstance(AnalysisMetaData.class);
-        QueryThenFetchConsumer queryThenFetchConsumer = new QueryThenFetchConsumer(analysisMetaData); //internalCluster().getInstance(QueryThenFetchConsumer.class);
+        QueryThenFetchConsumer queryThenFetchConsumer = new QueryThenFetchConsumer(analysisMetaData);
         Planner.Context plannerContext = new Planner.Context(clusterService());
         ConsumerContext consumerContext = new ConsumerContext(analysis.rootRelation(), plannerContext);
         queryThenFetchConsumer.consume(analysis.rootRelation(), consumerContext);
