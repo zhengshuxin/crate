@@ -36,6 +36,7 @@ import io.crate.operation.PageDownstreamFactory;
 import io.crate.operation.collect.JobCollectContext;
 import io.crate.operation.collect.MapSideDataCollectOperation;
 import io.crate.operation.count.CountOperation;
+import io.crate.operation.join.NestedLoopOperation;
 import io.crate.operation.projectors.FlatProjectorChain;
 import io.crate.operation.projectors.ResultProvider;
 import io.crate.operation.projectors.ResultProviderFactory;
@@ -46,6 +47,7 @@ import io.crate.planner.node.StreamerVisitor;
 import io.crate.planner.node.dql.CollectNode;
 import io.crate.planner.node.dql.CountNode;
 import io.crate.planner.node.dql.MergeNode;
+import io.crate.planner.node.dql.join.NestedLoopNode;
 import io.crate.types.DataTypes;
 import org.elasticsearch.cluster.ClusterService;
 import org.elasticsearch.common.breaker.CircuitBreaker;
@@ -121,8 +123,8 @@ public class ContextPreparer {
     private class InnerPreparer extends ExecutionNodeVisitor<PreparerContext, Void> {
 
         @Override
-        public Void visitCountNode(CountNode countNode, PreparerContext context) {
-            Map<String, Map<String, List<Integer>>> locations = countNode.routing().locations();
+        public Void visitCountNode(CountNode node, PreparerContext context) {
+            Map<String, Map<String, List<Integer>>> locations = node.routing().locations();
             if (locations == null) {
                 throw new IllegalArgumentException("locations are empty. Can't start count operation");
             }
@@ -137,10 +139,10 @@ public class ContextPreparer {
                     countOperation,
                     singleBucketBuilder,
                     indexShardMap,
-                    countNode.whereClause()
+                    node.whereClause()
             );
             context.directResultFuture = singleBucketBuilder.result();
-            context.contextBuilder.addSubContext(countNode.executionNodeId(), countContext);
+            context.contextBuilder.addSubContext(node.executionNodeId(), countContext);
             return null;
         }
 
@@ -189,5 +191,50 @@ public class ContextPreparer {
             context.contextBuilder.addSubContext(node.executionNodeId(), jobCollectContext);
             return null;
         }
+
+        @Override
+        public Void visitNestedLoopNode(NestedLoopNode node, PreparerContext context) {
+            RamAccountingContext ramAccountingContext = RamAccountingContext.forExecutionNode(circuitBreaker, node);
+
+            ResultProvider downstream = resultProviderFactory.createDownstream(node, node.jobId());
+            NestedLoopOperation nestedLoopOperation = new NestedLoopOperation();
+            nestedLoopOperation.downstream(downstream);
+
+            // left context
+            Tuple<PageDownstream, FlatProjectorChain> leftPageDownstreamProjectorChain =
+                    pageDownstreamFactory.createMergeNodePageDownstream(
+                            node.leftMergeNode(),
+                            nestedLoopOperation,
+                            ramAccountingContext,
+                            Optional.of(threadPool.executor(ThreadPool.Names.SEARCH)));
+            StreamerVisitor.Context leftStreamerContext = streamerVisitor.processPlanNode(node.leftMergeNode());
+            PageDownstreamContext leftPageDownstreamContext = new PageDownstreamContext(
+                    node.leftMergeNode().name(),
+                    leftPageDownstreamProjectorChain.v1(),
+                    leftStreamerContext.inputStreamers(),
+                    ramAccountingContext,
+                    node.leftMergeNode().numUpstreams());
+
+            context.contextBuilder.addSubContext(node.leftMergeNode().executionNodeId(), leftPageDownstreamContext);
+
+            // right context
+            Tuple<PageDownstream, FlatProjectorChain> rightPageDownstreamProjectorChain =
+                    pageDownstreamFactory.createMergeNodePageDownstream(
+                            node.rightMergeNode(),
+                            nestedLoopOperation,
+                            ramAccountingContext,
+                            Optional.of(threadPool.executor(ThreadPool.Names.SEARCH)));
+            StreamerVisitor.Context rightStreamerContext = streamerVisitor.processPlanNode(node.rightMergeNode());
+            PageDownstreamContext rightPageDownstreamContext = new PageDownstreamContext(
+                    node.rightMergeNode().name(),
+                    rightPageDownstreamProjectorChain.v1(),
+                    rightStreamerContext.inputStreamers(),
+                    ramAccountingContext,
+                    node.rightMergeNode().numUpstreams());
+            context.contextBuilder.addSubContext(node.rightMergeNode().executionNodeId(), rightPageDownstreamContext);
+
+            return null;
+        }
+
     }
 }

@@ -49,22 +49,23 @@ import io.crate.planner.node.StreamerVisitor;
 import io.crate.planner.node.ddl.*;
 import io.crate.planner.node.dml.*;
 import io.crate.planner.node.dql.*;
+import io.crate.planner.node.dql.join.NestedLoop;
 import io.crate.planner.node.management.KillPlan;
 import org.elasticsearch.action.bulk.BulkRetryCoordinatorPool;
 import org.elasticsearch.cluster.ClusterService;
 import org.elasticsearch.common.Nullable;
 import org.elasticsearch.common.breaker.CircuitBreaker;
+import org.elasticsearch.common.collect.Tuple;
 import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.inject.Provider;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.threadpool.ThreadPool;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 
 public class TransportExecutor implements Executor, TaskExecutor {
+
+    private static final ExecutionNodesPlanVisitor EXECUTION_NODES_PLAN_VISITOR = new ExecutionNodesPlanVisitor();
 
     private final Functions functions;
     private final TaskCollectingVisitor planVisitor;
@@ -128,7 +129,7 @@ public class TransportExecutor implements Executor, TaskExecutor {
     @Override
     public Job newJob(Plan plan) {
         final Job job = new Job();
-        List<Task> tasks = planVisitor.process(plan, job);
+        List<? extends Task> tasks = planVisitor.process(plan, job);
         job.addTasks(tasks);
         return job;
     }
@@ -161,7 +162,7 @@ public class TransportExecutor implements Executor, TaskExecutor {
         return lastTask.result();
     }
 
-    class TaskCollectingVisitor extends PlanVisitor<Job, List<Task>> {
+    class TaskCollectingVisitor extends PlanVisitor<Job, List<? extends Task>> {
 
         @Override
         public List<Task> visitIterablePlan(IterablePlan plan, Job job) {
@@ -178,29 +179,10 @@ public class TransportExecutor implements Executor, TaskExecutor {
         }
 
         @Override
-        public List<Task> visitGlobalAggregate(GlobalAggregate plan, Job job) {
-            return ImmutableList.of(createExecutableNodesTask(job, plan.collectNode(), plan.mergeNode()));
-        }
-
-        @Override
-        public List<Task> visitCollectAndMerge(CollectAndMerge plan, Job job) {
-            return ImmutableList.of(createExecutableNodesTask(job, plan.collectNode(), plan.localMergeNode()));
-        }
-
-        @Override
-        public List<Task> visitQueryAndFetch(QueryAndFetch plan, Job job) {
-            return ImmutableList.of(createExecutableNodesTask(job, plan.collectNode(), plan.localMergeNode()));
-        }
-
-        @Override
-        public List<Task> visitCountPlan(CountPlan countPlan, Job job) {
-            return ImmutableList.of(createExecutableNodesTask(job, countPlan.countNode(), countPlan.mergeNode()));
-        }
-
-        private Task createExecutableNodesTask(Job job, ExecutionNode executionNode, @Nullable MergeNode localMergeNode) {
-            return createExecutableNodesTask(job,
-                    ImmutableList.<List<ExecutionNode>>of(ImmutableList.of(executionNode)),
-                    localMergeNode == null ? null : ImmutableList.of(localMergeNode));
+        protected List<? extends Task> visitPlan(Plan plan, Job job) {
+            Tuple<List<List<ExecutionNode>>, List<MergeNode>> planParts =
+                    EXECUTION_NODES_PLAN_VISITOR.process(plan, job);
+            return ImmutableList.of(createExecutableNodesTask(job, planParts.v1(), planParts.v2()));
         }
 
         private ExecutionNodesTask createExecutableNodesTask(Job job, List<List<ExecutionNode>> groupedExecutionNodes, @Nullable List<MergeNode> localMergeNodes) {
@@ -231,51 +213,22 @@ public class TransportExecutor implements Executor, TaskExecutor {
         }
 
         @Override
-        public List<Task> visitNonDistributedGroupBy(NonDistributedGroupBy plan, Job job) {
-            return ImmutableList.of(createExecutableNodesTask(job, plan.collectNode(), plan.localMergeNode()));
-        }
-
-        @Override
-        public List<Task> visitUpsert(Upsert plan, Job job) {
+        public List<? extends Task> visitUpsert(Upsert plan, Job job) {
             if (plan.nodes().size() == 1 && plan.nodes().get(0) instanceof IterablePlan) {
                 return process(plan.nodes().get(0), job);
             }
 
-            List<List<ExecutionNode>> groupedExecutionNodes = new ArrayList<>(plan.nodes().size());
-            List<MergeNode> mergeNodes = new ArrayList<>(plan.nodes().size());
-            for (Plan subPlan : plan.nodes()) {
-                assert subPlan instanceof CollectAndMerge;
-                groupedExecutionNodes.add(ImmutableList.<ExecutionNode>of(((CollectAndMerge) subPlan).collectNode()));
-                mergeNodes.add(((CollectAndMerge) subPlan).localMergeNode());
-            }
-            ExecutionNodesTask task = createExecutableNodesTask(job, groupedExecutionNodes, mergeNodes);
+            Tuple<List<List<ExecutionNode>>, List<MergeNode>> planParts =
+                    EXECUTION_NODES_PLAN_VISITOR.process(plan, job);
+            ExecutionNodesTask task = createExecutableNodesTask(job, planParts.v1(), planParts.v2());
             task.rowCountResult(true);
             return ImmutableList.<Task>of(task);
         }
 
         @Override
-        public List<Task> visitDistributedGroupBy(DistributedGroupBy plan, Job job) {
-            plan.collectNode().jobId(job.id());
-            plan.reducerMergeNode().jobId(job.id());
-            MergeNode localMergeNode = plan.localMergeNode();
-            List<MergeNode> mergeNodes = null;
-            if (localMergeNode != null) {
-                localMergeNode.jobId(job.id());
-                mergeNodes = ImmutableList.of(localMergeNode);
-            }
-            return ImmutableList.<Task>of(
-                    createExecutableNodesTask(job,
-                            ImmutableList.<List<ExecutionNode>>of(
-                                    ImmutableList.<ExecutionNode>of(
-                                            plan.collectNode(),
-                                            plan.reducerMergeNode())),
-                            mergeNodes));
-        }
-
-        @Override
-        public List<Task> visitInsertByQuery(InsertFromSubQuery node, Job job) {
-            List<Task> tasks = process(node.innerPlan(), job);
-            if(node.handlerMergeNode().isPresent()) {
+        public List<? extends Task> visitInsertByQuery(InsertFromSubQuery node, Job job) {
+            List<? extends Task> tasks = process(node.innerPlan(), job);
+            if (node.handlerMergeNode().isPresent()) {
                 // TODO: remove this hack
                 Task previousTask = Iterables.getLast(tasks);
                 if (previousTask instanceof ExecutionNodesTask) {
@@ -290,17 +243,13 @@ public class TransportExecutor implements Executor, TaskExecutor {
         }
 
         @Override
-        public List<Task> visitQueryThenFetch(QueryThenFetch plan, Job job) {
-            return ImmutableList.of(createExecutableNodesTask(job, plan.collectNode(), plan.mergeNode()));
-        }
-
-        @Override
         public List<Task> visitKillPlan(KillPlan killPlan, Job job) {
             return ImmutableList.<Task>of(new KillTask(
                     clusterService,
                     transportActionProvider.transportKillAllNodeAction(),
                     job.id()));
         }
+
     }
 
     class NodeVisitor extends PlanNodeVisitor<UUID, ImmutableList<Task>> {
@@ -403,6 +352,99 @@ public class TransportExecutor implements Executor, TaskExecutor {
         protected ImmutableList<Task> visitPlanNode(PlanNode node, UUID jobId) {
             throw new UnsupportedOperationException(
                     String.format("Can't generate job/task for planNode %s", node));
+        }
+    }
+
+    static class ExecutionNodesPlanVisitor extends PlanVisitor<Job, Tuple<List<List<ExecutionNode>>, List<MergeNode>>> {
+        @Override
+        public Tuple<List<List<ExecutionNode>>, List<MergeNode>> visitQueryThenFetch(QueryThenFetch plan, Job job) {
+            return new Tuple<List<List<ExecutionNode>>, List<MergeNode>>(
+                    ImmutableList.<List<ExecutionNode>>of(ImmutableList.<ExecutionNode>of(plan.collectNode())),
+                    plan.mergeNode() == null ? ImmutableList.<MergeNode>of() : ImmutableList.of(plan.mergeNode()));
+        }
+
+        @Override
+        public Tuple<List<List<ExecutionNode>>, List<MergeNode>> visitQueryAndFetch(QueryAndFetch plan, Job job) {
+            return new Tuple<List<List<ExecutionNode>>, List<MergeNode>>(
+                    ImmutableList.<List<ExecutionNode>>of(ImmutableList.<ExecutionNode>of(plan.collectNode())),
+                    plan.localMergeNode() == null ? ImmutableList.<MergeNode>of() : ImmutableList.of(plan.localMergeNode()));
+        }
+
+        @Override
+        public Tuple<List<List<ExecutionNode>>, List<MergeNode>> visitDistributedGroupBy(DistributedGroupBy plan, Job job) {
+            return new Tuple<List<List<ExecutionNode>>, List<MergeNode>>(
+                    ImmutableList.<List<ExecutionNode>>of(ImmutableList.<ExecutionNode>of(
+                            plan.collectNode(), plan.reducerMergeNode())),
+                    plan.localMergeNode() == null ? ImmutableList.<MergeNode>of() : ImmutableList.of(plan.localMergeNode()));
+        }
+
+        @Override
+        public Tuple<List<List<ExecutionNode>>, List<MergeNode>> visitNonDistributedGroupBy(NonDistributedGroupBy plan, Job job) {
+            return new Tuple<List<List<ExecutionNode>>, List<MergeNode>>(
+                    ImmutableList.<List<ExecutionNode>>of(ImmutableList.<ExecutionNode>of(plan.collectNode())),
+                    plan.localMergeNode() == null ? ImmutableList.<MergeNode>of() : ImmutableList.of(plan.localMergeNode()));
+        }
+
+        @Override
+        public Tuple<List<List<ExecutionNode>>, List<MergeNode>> visitGlobalAggregate(GlobalAggregate plan, Job job) {
+            return new Tuple<List<List<ExecutionNode>>, List<MergeNode>>(
+                    ImmutableList.<List<ExecutionNode>>of(ImmutableList.<ExecutionNode>of(plan.collectNode())),
+                    plan.mergeNode() == null ? ImmutableList.<MergeNode>of() : ImmutableList.of(plan.mergeNode()));
+        }
+
+        @Override
+        public Tuple<List<List<ExecutionNode>>, List<MergeNode>> visitCollectAndMerge(CollectAndMerge plan, Job job) {
+            return new Tuple<List<List<ExecutionNode>>, List<MergeNode>>(
+                    ImmutableList.<List<ExecutionNode>>of(ImmutableList.<ExecutionNode>of(plan.collectNode())),
+                    plan.localMergeNode() == null ? ImmutableList.<MergeNode>of() : ImmutableList.of(plan.localMergeNode()));
+        }
+
+        @Override
+        public Tuple<List<List<ExecutionNode>>, List<MergeNode>> visitCountPlan(CountPlan plan, Job job) {
+            return new Tuple<List<List<ExecutionNode>>, List<MergeNode>>(
+                    ImmutableList.<List<ExecutionNode>>of(ImmutableList.<ExecutionNode>of(plan.countNode())),
+                    plan.mergeNode() == null ? ImmutableList.<MergeNode>of() : ImmutableList.of(plan.mergeNode()));
+        }
+
+        @Override
+        public Tuple<List<List<ExecutionNode>>, List<MergeNode>> visitUpsert(Upsert plan, Job job) {
+            List<List<ExecutionNode>> groupedExecutionNodes = new ArrayList<>(plan.nodes().size());
+            List<MergeNode> mergeNodes = new ArrayList<>(plan.nodes().size());
+            for (Plan subPlan : plan.nodes()) {
+                assert subPlan instanceof CollectAndMerge;
+                groupedExecutionNodes.add(ImmutableList.<ExecutionNode>of(((CollectAndMerge) subPlan).collectNode()));
+                mergeNodes.add(((CollectAndMerge) subPlan).localMergeNode());
+            }
+
+            return new Tuple<>(groupedExecutionNodes, mergeNodes);
+        }
+
+        @Override
+        public Tuple<List<List<ExecutionNode>>, List<MergeNode>> visitNestedLoop(NestedLoop plan, Job job) {
+            Tuple<List<List<ExecutionNode>>, List<MergeNode>> left = process(plan.left(), job);
+            Tuple<List<List<ExecutionNode>>, List<MergeNode>> right = process(plan.right(), job);
+
+            List<ExecutionNode> executionNodes = new ArrayList<>();
+
+            assert left.v1().size() == 1;
+            assert right.v1().size() == 1;
+
+            executionNodes.addAll(left.v1().get(0));
+            executionNodes.addAll(right.v1().get(0));
+
+            plan.nestedLoopNode().leftMergeNode().jobId(job.id());
+            plan.nestedLoopNode().rightMergeNode().jobId(job.id());
+            executionNodes.add(plan.nestedLoopNode());
+
+            return new Tuple<List<List<ExecutionNode>>, List<MergeNode>>(
+                    ImmutableList.<List<ExecutionNode>>of(executionNodes),
+                    ImmutableList.of(plan.localMergeNode()));
+        }
+
+        @Override
+        protected Tuple<List<List<ExecutionNode>>, List<MergeNode>> visitPlan(Plan plan, Job job) {
+            throw new UnsupportedOperationException(String.format(Locale.ENGLISH,
+                    "Plan %s not supported", plan.getClass().getCanonicalName()));
         }
     }
 }

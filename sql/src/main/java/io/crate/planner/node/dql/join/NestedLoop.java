@@ -55,13 +55,9 @@ import org.elasticsearch.common.Nullable;
 public class NestedLoop extends PlanAndPlannedAnalyzedRelation {
 
 
-    private final PlannedAnalyzedRelation left;
-    private final PlannedAnalyzedRelation right;
+    private final PlanAndPlannedAnalyzedRelation left;
+    private final PlanAndPlannedAnalyzedRelation right;
     private final NestedLoopNode nestedLoopNode;
-    @Nullable
-    private MergeNode leftMergeNode;
-    @Nullable
-    private MergeNode rightMergeNode;
     @Nullable
     private MergeNode localMergeNode;
 
@@ -94,8 +90,8 @@ public class NestedLoop extends PlanAndPlannedAnalyzedRelation {
      * a | 3
      * b | 3
      */
-    public NestedLoop(PlannedAnalyzedRelation left,
-                      PlannedAnalyzedRelation right,
+    public NestedLoop(PlanAndPlannedAnalyzedRelation left,
+                      PlanAndPlannedAnalyzedRelation right,
                       NestedLoopNode nestedLoopNode,
                       boolean leftOuterLoop) {
         this.leftOuterLoop = leftOuterLoop;
@@ -104,11 +100,11 @@ public class NestedLoop extends PlanAndPlannedAnalyzedRelation {
         this.nestedLoopNode = nestedLoopNode;
     }
 
-    public PlannedAnalyzedRelation left() {
+    public PlanAndPlannedAnalyzedRelation left() {
         return left;
     }
 
-    public PlannedAnalyzedRelation right() {
+    public PlanAndPlannedAnalyzedRelation right() {
         return right;
     }
 
@@ -122,24 +118,6 @@ public class NestedLoop extends PlanAndPlannedAnalyzedRelation {
 
     public boolean leftOuterLoop() {
         return leftOuterLoop;
-    }
-
-    public void leftMergeNode(MergeNode leftMergeNode) {
-        this.leftMergeNode = leftMergeNode;
-    }
-
-    @Nullable
-    public MergeNode leftMergeNode() {
-        return leftMergeNode;
-    }
-
-    public void rightMergeNode(MergeNode rightMergeNode) {
-        this.rightMergeNode = rightMergeNode;
-    }
-
-    @Nullable
-    public MergeNode rightMergeNode() {
-        return rightMergeNode;
     }
 
     public void localMergeNode(MergeNode localMergeNode) {

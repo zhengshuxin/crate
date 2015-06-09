@@ -44,11 +44,11 @@ public class ExecutionNodeVisitor<C, R> {
         return visitExecutionNode(node, context);
     }
 
-    public R visitCountNode(CountNode countNode, C context) {
-        return visitExecutionNode(countNode, context);
+    public R visitCountNode(CountNode node, C context) {
+        return visitExecutionNode(node, context);
     }
 
-    public R visitNestedLoopNode(NestedLoopNode nestedLoopNode, C context) {
-        return visitExecutionNode(nestedLoopNode, context);
+    public R visitNestedLoopNode(NestedLoopNode node, C context) {
+        return visitExecutionNode(node, context);
     }
 }

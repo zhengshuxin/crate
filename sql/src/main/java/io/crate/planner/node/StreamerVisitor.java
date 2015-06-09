@@ -29,6 +29,7 @@ import io.crate.metadata.Functions;
 import io.crate.operation.aggregation.AggregationFunction;
 import io.crate.planner.node.dql.CollectNode;
 import io.crate.planner.node.dql.MergeNode;
+import io.crate.planner.node.dql.join.NestedLoopNode;
 import io.crate.planner.projection.AggregationProjection;
 import io.crate.planner.projection.GroupProjection;
 import io.crate.planner.projection.Projection;
@@ -122,6 +123,14 @@ public class StreamerVisitor {
         }
 
         @Override
+        public Void visitNestedLoopNode(NestedLoopNode node, Context context) {
+            process(node.leftMergeNode(), context);
+            process(node.rightMergeNode(), context);
+            extractFromNestedLoopNode(node, context);
+            return null;
+        }
+
+        @Override
         protected Void visitExecutionNode(ExecutionNode node, Context context) {
             throw new UnsupportedOperationException(String.format("Got unsupported ExecutionNode %s", node.getClass().getName()));
         }
@@ -203,6 +212,10 @@ public class StreamerVisitor {
         Projection firstProjection = node.projections().get(0);
         setInputStreamers(node.inputTypes(), firstProjection, context);
         setOutputStreamers(node.outputTypes(), node.inputTypes(), node.projections(), context);
+    }
+
+    private void extractFromNestedLoopNode(NestedLoopNode node, Context context) {
+        setOutputStreamers(node.outputTypes(), ImmutableList.<DataType>of(), node.projections(), context);
     }
 
     private void setOutputStreamers(List<DataType> outputTypes,

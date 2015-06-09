@@ -27,8 +27,10 @@ import com.google.common.collect.ImmutableSet;
 import io.crate.planner.node.ExecutionNodeVisitor;
 import io.crate.planner.node.PlanNodeVisitor;
 import io.crate.planner.node.dql.AbstractDQLPlanNode;
+import io.crate.planner.node.dql.MergeNode;
 import io.crate.types.DataType;
 import io.crate.types.DataTypes;
+import org.elasticsearch.common.Nullable;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 
@@ -48,18 +50,18 @@ public class NestedLoopNode extends AbstractDQLPlanNode {
     private Set<String> executionNodes;
     private List<String> downstreamNodes = ImmutableList.of();
 
-    private int leftExecutionNodeId;
-    private int rightExecutionNodeId;
-
     private List<DataType> leftInputTypes;
     private List<DataType> rightInputTypes;
 
+    @Nullable
+    private MergeNode leftMergeNode;
+    @Nullable
+    private MergeNode rightMergeNode;
+
     public NestedLoopNode() {}
 
-    public NestedLoopNode(int leftExecutionNodeId, int rightExecutionNodeId, String name) {
-        super(0, name); // TODO: remove passing default execution Node id
-        this.leftExecutionNodeId = leftExecutionNodeId;
-        this.rightExecutionNodeId = rightExecutionNodeId;
+    public NestedLoopNode(int executionNodeId, String name) {
+        super(executionNodeId, name);
     }
 
     @Override
@@ -74,6 +76,24 @@ public class NestedLoopNode extends AbstractDQLPlanNode {
         } else {
             return executionNodes;
         }
+    }
+
+    public void leftMergeNode(MergeNode leftMergeNode) {
+        this.leftMergeNode = leftMergeNode;
+    }
+
+    @Nullable
+    public MergeNode leftMergeNode() {
+        return leftMergeNode;
+    }
+
+    public void rightMergeNode(MergeNode rightMergeNode) {
+        this.rightMergeNode = rightMergeNode;
+    }
+
+    @Nullable
+    public MergeNode rightMergeNode() {
+        return rightMergeNode;
     }
 
     public void executionNodes(Set<String> executionNodes) {
@@ -114,14 +134,6 @@ public class NestedLoopNode extends AbstractDQLPlanNode {
         this.rightInputTypes = rightInputTypes;
     }
 
-    public int leftExecutionNodeId() {
-        return leftExecutionNodeId;
-    }
-
-    public int rightExecutionNodeId() {
-        return rightExecutionNodeId;
-    }
-
     @Override
     public List<DataType> inputTypes() {
         throw new UnsupportedOperationException("inputsTypes not supported. " +
@@ -132,12 +144,6 @@ public class NestedLoopNode extends AbstractDQLPlanNode {
     public void inputTypes(List<DataType> inputTypes) {
         throw new UnsupportedOperationException("inputsTypes not supported. " +
                 "Use leftInputTypes() or rightInputTypes()");
-    }
-
-    @Override
-    public int executionNodeId() {
-        throw  new UnsupportedOperationException("executionNodeId() not supported. " +
-                "Use leftExecutionNOdeId() or rightExecutionNodeId()");
     }
 
     @Override
@@ -154,8 +160,6 @@ public class NestedLoopNode extends AbstractDQLPlanNode {
     @Override
     public void readFrom(StreamInput in) throws IOException {
         super.readFrom(in);
-        leftExecutionNodeId = in.readVInt();
-        rightExecutionNodeId = in.readVInt();
         downstreamExecutionNodeId = in.readVInt();
 
         int numDownstreamNodes = in.readVInt();
@@ -186,13 +190,19 @@ public class NestedLoopNode extends AbstractDQLPlanNode {
                 executionNodes.add(in.readString());
             }
         }
+        if (in.readBoolean()) {
+            leftMergeNode = new MergeNode();
+            leftMergeNode.readFrom(in);
+        }
+        if (in.readBoolean()) {
+            rightMergeNode = new MergeNode();
+            rightMergeNode.readFrom(in);
+        }
     }
 
     @Override
     public void writeTo(StreamOutput out) throws IOException {
         super.writeTo(out);
-        out.writeVInt(leftExecutionNodeId);
-        out.writeVInt(rightExecutionNodeId);
         out.writeVInt(downstreamExecutionNodeId);
         out.writeVInt(downstreamNodes.size());
         for (String downstreamNode : downstreamNodes) {
@@ -218,6 +228,19 @@ public class NestedLoopNode extends AbstractDQLPlanNode {
             for (String node : executionNodes) {
                 out.writeString(node);
             }
+        }
+
+        if (leftMergeNode == null) {
+            out.writeBoolean(false);
+        } else {
+            out.writeBoolean(true);
+            leftMergeNode.writeTo(out);
+        }
+        if (rightMergeNode == null) {
+            out.writeBoolean(false);
+        } else {
+            out.writeBoolean(true);
+            rightMergeNode.writeTo(out);
         }
     }
 

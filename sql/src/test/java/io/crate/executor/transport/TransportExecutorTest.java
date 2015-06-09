@@ -23,6 +23,7 @@ package io.crate.executor.transport;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.ListenableFuture;
 import io.crate.Constants;
 import io.crate.analyze.OrderBy;
@@ -49,6 +50,8 @@ import io.crate.planner.node.dml.ESDeleteByQueryNode;
 import io.crate.planner.node.dml.SymbolBasedUpsertByIdNode;
 import io.crate.planner.node.dml.Upsert;
 import io.crate.planner.node.dql.*;
+import io.crate.planner.node.dql.join.NestedLoop;
+import io.crate.planner.node.dql.join.NestedLoopNode;
 import io.crate.planner.node.management.KillPlan;
 import io.crate.planner.projection.*;
 import io.crate.planner.symbol.*;
@@ -744,4 +747,114 @@ public class TransportExecutorTest extends BaseTransportExecutorTest {
         assertThat(results, hasSize(1));
         results.get(0).get();
     }
+
+    @Test
+    public void testNestedLoopWithoutFetch() throws Exception {
+        // select c.id, c.name, l.id, l.name from characters as c, locations as l;
+        setup.setUpCharacters();
+        setup.setUpLocations();
+
+        DocTableInfo characters = docSchemaInfo.getTableInfo("characters");
+        Reference leftIdRef = new Reference(characters.getReferenceInfo(new ColumnIdent("id")));
+        Reference leftNameRef = new Reference(characters.getReferenceInfo(new ColumnIdent("name")));
+
+        DocTableInfo locations = docSchemaInfo.getTableInfo("locations");
+        Reference rightIdRef = new Reference(locations.getReferenceInfo(new ColumnIdent("id")));
+        Reference rightNameRef = new Reference(locations.getReferenceInfo(new ColumnIdent("name")));
+
+        List<Symbol> leftCollectSymbols = Lists.<Symbol>newArrayList(leftIdRef, leftNameRef);
+        List<Symbol> rightCollectSymbols = Lists.<Symbol>newArrayList(rightIdRef, rightNameRef);
+        List<Symbol> outputSymbols = Lists.newArrayList(leftCollectSymbols);
+        outputSymbols.addAll(rightCollectSymbols);
+
+        Planner.Context ctx = new Planner.Context(clusterService());
+        String localNodeId = clusterService.localNode().id();
+        Set<String> localExecutionNode = Sets.newHashSet(localNodeId);
+
+        // left relation
+        CollectNode leftCollectNode = PlanNodeBuilder.distributingCollect(
+                characters,
+                ctx,
+                WhereClause.MATCH_ALL,
+                leftCollectSymbols,
+                Lists.newArrayList(localExecutionNode),
+                ImmutableList.<Projection>of());
+        OrderBy leftOrderBy = new OrderBy(ImmutableList.<Symbol>of(leftIdRef), new boolean[]{false}, new Boolean[]{false});
+        leftCollectNode.orderBy(leftOrderBy);
+
+        MergeNode leftMergeNode = PlanNodeBuilder.sortedLocalMerge(
+                ImmutableList.<Projection>of(), leftOrderBy, leftCollectSymbols, null, leftCollectNode, ctx);
+        leftMergeNode.executionNodes(localExecutionNode);
+        leftCollectNode.downstreamExecutionNodeId(leftMergeNode.executionNodeId());
+
+        // right relation
+        CollectNode rightCollectNode = PlanNodeBuilder.distributingCollect(
+                locations,
+                ctx,
+                WhereClause.MATCH_ALL,
+                rightCollectSymbols,
+                Lists.newArrayList(localExecutionNode),
+                ImmutableList.<Projection>of());
+        OrderBy rightOrderBy = new OrderBy(ImmutableList.<Symbol>of(rightIdRef), new boolean[]{true}, new Boolean[]{false});
+        rightCollectNode.orderBy(rightOrderBy);
+
+        MergeNode rightMergeNode = PlanNodeBuilder.sortedLocalMerge(
+                ImmutableList.<Projection>of(), rightOrderBy, rightCollectSymbols, null, rightCollectNode, ctx);
+        rightMergeNode.executionNodes(localExecutionNode);
+        rightCollectNode.downstreamExecutionNodeId(rightMergeNode.executionNodeId());
+
+        NestedLoopNode nestedLoopNode = new NestedLoopNode(
+                ctx.nextExecutionNodeId(),
+                "nested loop with query-and-fetch");
+        nestedLoopNode.leftMergeNode(leftMergeNode);
+        nestedLoopNode.leftInputTypes(leftMergeNode.outputTypes());
+        nestedLoopNode.rightMergeNode(rightMergeNode);
+        nestedLoopNode.rightInputTypes(rightMergeNode.outputTypes());
+        nestedLoopNode.outputTypes(Symbols.extractTypes(outputSymbols));
+        nestedLoopNode.executionNodes(localExecutionNode);
+
+        leftMergeNode.downstreamExecutionNodeId(nestedLoopNode.executionNodeId());
+        leftMergeNode.downstreamNodes(nestedLoopNode.executionNodes());
+        rightMergeNode.downstreamExecutionNodeId(nestedLoopNode.executionNodeId());
+        rightMergeNode.downstreamNodes(nestedLoopNode.executionNodes());
+
+        MergeNode localMergeNode = PlanNodeBuilder.localMerge(
+                ImmutableList.<Projection>of(),
+                nestedLoopNode,
+                ctx);
+        localMergeNode.executionNodes(localExecutionNode);
+        nestedLoopNode.downstreamExecutionNodeId(localMergeNode.executionNodeId());
+        nestedLoopNode.downstreamNodes(localMergeNode.executionNodes());
+
+        NestedLoop nestedLoopPlan = new NestedLoop(
+                new QueryThenFetch(leftCollectNode, null),
+                new QueryThenFetch(rightCollectNode, null),
+                nestedLoopNode,
+                false);
+        nestedLoopPlan.localMergeNode(localMergeNode);
+
+        Job job = executor.newJob(nestedLoopPlan);
+        assertThat(job.tasks().size(), is(1));
+        List<? extends ListenableFuture<TaskResult>> result = executor.execute(job);
+        Bucket rows = result.get(0).get().rows();
+        assertThat(rows.size(), is(52));
+
+        /*
+        TODO: fix sorting issues
+        Iterator<Row> rowIterator = rows.iterator();
+
+        Row row = rowIterator.next();
+        assertThat((Integer)row.get(0), is(1));
+        assertThat((BytesRef)row.get(1), is(new BytesRef("Arthur")));
+        assertThat((BytesRef)row.get(2), is(new BytesRef("1")));
+        assertThat((BytesRef)row.get(3), is(new BytesRef("North West Ripple")));
+
+        row = rowIterator.next();
+        assertThat((Integer)row.get(0), is(1));
+        assertThat((BytesRef)row.get(1), is(new BytesRef("Arthur")));
+        assertThat((BytesRef)row.get(2), is(new BytesRef("2")));
+        assertThat((BytesRef)row.get(3), is(new BytesRef("Outer Eastern Rim")));
+        */
+    }
+
 }
