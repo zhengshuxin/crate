@@ -106,16 +106,17 @@ public class PlanNodeBuilder {
                                                 Planner.Context plannerContext) {
         NestedLoopNode node = new NestedLoopNode(
                 plannerContext.nextExecutionNodeId(),
-                plannerContext.nextExecutionNodeId(),
                 "localNestedLoopNode"
         );
         node.projections(projections);
         connectTypes(left, right, node);
         if(left != null) {
-            left.downstreamExecutionNodeId(node.leftExecutionNodeId());
+            left.downstreamExecutionNodeId(node.executionNodeId());
+            node.leftMergeNode(left);
         }
         if (right != null) {
-            right.downstreamExecutionNodeId(node.rightExecutionNodeId());
+            right.downstreamExecutionNodeId(node.executionNodeId());
+            node.rightMergeNode(right);
         }
         return node;
     }

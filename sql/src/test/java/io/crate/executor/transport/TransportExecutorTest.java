@@ -827,9 +827,10 @@ public class TransportExecutorTest extends BaseTransportExecutorTest {
         nestedLoopNode.downstreamExecutionNodeId(localMergeNode.executionNodeId());
         nestedLoopNode.downstreamNodes(localMergeNode.executionNodes());
 
+        QueryThenFetch.Context qtfCtx = new QueryThenFetch.Context(null, null, null, null, null);
         NestedLoop nestedLoopPlan = new NestedLoop(
-                new QueryThenFetch(leftCollectNode, null),
-                new QueryThenFetch(rightCollectNode, null),
+                new QueryThenFetch(leftCollectNode, null, qtfCtx),
+                new QueryThenFetch(rightCollectNode, null, qtfCtx),
                 nestedLoopNode,
                 false);
         nestedLoopPlan.localMergeNode(localMergeNode);

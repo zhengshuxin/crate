@@ -105,17 +105,18 @@ public class CrossJoinConsumerTest {
         assertThat(left.mergeNode(), is(nullValue()));
         assertThat(right.mergeNode(), is(nullValue()));
 
-        assertThat(left.collectNode().downstreamExecutionNodeId(), is(nestedLoop.leftMergeNode().executionNodeId()));
-        assertThat(right.collectNode().downstreamExecutionNodeId(), is(nestedLoop.rightMergeNode().executionNodeId()));
-
         NestedLoopNode nl = nestedLoop.nestedLoopNode();
 
-        assertThat(nestedLoop.leftMergeNode().downstreamExecutionNodeId(), is(nl.leftExecutionNodeId()));
-        assertThat(nestedLoop.leftMergeNode().orderByIndices().length, is(1));
-        assertThat(nestedLoop.leftMergeNode().orderByIndices()[0], is(0));
-        assertThat(nestedLoop.rightMergeNode().downstreamExecutionNodeId(), is(nl.rightExecutionNodeId()));
-        assertThat(nestedLoop.rightMergeNode().orderByIndices().length, is(1));
-        assertThat(nestedLoop.rightMergeNode().orderByIndices()[0], is(0));
+        assertThat(left.collectNode().downstreamExecutionNodeId(), is(nl.leftMergeNode().executionNodeId()));
+        assertThat(right.collectNode().downstreamExecutionNodeId(), is(nl.rightMergeNode().executionNodeId()));
+
+
+        assertThat(nl.leftMergeNode().downstreamExecutionNodeId(), is(nl.executionNodeId()));
+        assertThat(nl.leftMergeNode().orderByIndices().length, is(1));
+        assertThat(nl.leftMergeNode().orderByIndices()[0], is(0));
+        assertThat(nl.rightMergeNode().downstreamExecutionNodeId(), is(nl.executionNodeId()));
+        assertThat(nl.rightMergeNode().orderByIndices().length, is(1));
+        assertThat(nl.rightMergeNode().orderByIndices()[0], is(0));
 
         assertThat(nl.projections().size(), is(1));
         TopNProjection topNProjection = (TopNProjection)nl.projections().get(0);
@@ -143,20 +144,20 @@ public class CrossJoinConsumerTest {
         QueryThenFetch innerLeftQTF = (QueryThenFetch)innerNL.left();
         QueryThenFetch innerRightQTF = (QueryThenFetch)innerNL.right();
         assertThat(innerLeftQTF.mergeNode(), is(nullValue()));
-        assertThat(innerLeftQTF.collectNode().downstreamExecutionNodeId(), is(innerNL.leftMergeNode().executionNodeId()));
-        assertThat(innerNL.leftMergeNode().downstreamExecutionNodeId(), is(innerNL.nestedLoopNode().leftExecutionNodeId()));
+        assertThat(innerLeftQTF.collectNode().downstreamExecutionNodeId(), is(innerNL.nestedLoopNode().executionNodeId()));
+        assertThat(innerNL.nestedLoopNode().leftMergeNode().downstreamExecutionNodeId(), is(innerNL.nestedLoopNode().executionNodeId()));
 
         assertThat(innerRightQTF.mergeNode(), is(nullValue()));
-        assertThat(innerRightQTF.collectNode().downstreamExecutionNodeId(), is(innerNL.rightMergeNode().executionNodeId()));
-        assertThat(innerNL.rightMergeNode().downstreamExecutionNodeId(), is(innerNL.nestedLoopNode().rightExecutionNodeId()));
+        assertThat(innerRightQTF.collectNode().downstreamExecutionNodeId(), is(innerNL.nestedLoopNode().rightMergeNode().executionNodeId()));
+        assertThat(innerNL.nestedLoopNode().rightMergeNode().downstreamExecutionNodeId(), is(innerNL.nestedLoopNode().executionNodeId()));
 
         assertThat(innerNL.localMergeNode(), is(nullValue()));
         /* left PlanNode is a NestedLoopNode, so there is no leftMergeNode.
            The inner NestedLoopNode downstreams directly to the outer NestedLoopNode */
-        assertThat(nl.leftMergeNode(), is(nullValue()));
-        assertThat(innerNL.nestedLoopNode().downstreamExecutionNodeId(), is(nl.nestedLoopNode().leftExecutionNodeId()));
+        assertThat(nl.nestedLoopNode().leftMergeNode(), is(nullValue()));
+        assertThat(innerNL.nestedLoopNode().downstreamExecutionNodeId(), is(nl.nestedLoopNode().executionNodeId()));
 
-        assertThat(nl.rightMergeNode().downstreamExecutionNodeId(), is(nl.nestedLoopNode().rightExecutionNodeId()));
+        assertThat(nl.nestedLoopNode().rightMergeNode().downstreamExecutionNodeId(), is(nl.nestedLoopNode().executionNodeId()));
     }
 
     @Test

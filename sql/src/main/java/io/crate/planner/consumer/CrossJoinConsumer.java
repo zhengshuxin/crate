@@ -140,8 +140,6 @@ public class CrossJoinConsumer implements Consumer {
                             context.plannerContext()
                     );
                     NestedLoop nl = new NestedLoop(left, right, nestedLoopNode, true);
-                    nl.leftMergeNode(leftMergeNode);
-                    nl.rightMergeNode(rightMergeNode);
                     left = nl;
 
                     leftMergeNode = null;
@@ -168,14 +166,12 @@ public class CrossJoinConsumer implements Consumer {
             );
             // TODO: find a generic solution
             if (left instanceof NestedLoop) {
-                ((NestedLoop) left).nestedLoopNode().downstreamExecutionNodeId(nestedLoopNode.leftExecutionNodeId());
+                ((NestedLoop) left).nestedLoopNode().downstreamExecutionNodeId(nestedLoopNode.executionNodeId());
             }
 
             // set fieldOutputs to the lastNestedLoopNode so the ordering of the outputs is correct
             nestedLoopNode.outputTypes(Symbols.extractTypes(statement.fields()));
             NestedLoop plan = new NestedLoop(left, right, nestedLoopNode, true);
-            plan.leftMergeNode(leftMergeNode);
-            plan.rightMergeNode(rightMergeNode);
 
             MergeNode localMergeNode;
             OrderBy orderBy = statement.querySpec().orderBy();

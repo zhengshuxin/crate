@@ -247,8 +247,7 @@ public class NestedLoopNode extends AbstractDQLPlanNode {
     @Override
     public String toString() {
         MoreObjects.ToStringHelper helper = MoreObjects.toStringHelper(this)
-                .add("leftExecutionNodeId", leftExecutionNodeId())
-                .add("rightExecutionNodeId", leftExecutionNodeId())
+                .add("executionNodeId", executionNodeId())
                 .add("name", name())
                 .add("outputTypes", outputTypes)
                 .add("jobId", jobId())
