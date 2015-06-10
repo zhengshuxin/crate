@@ -26,7 +26,6 @@ import io.crate.metadata.ReferenceInfo;
 import io.crate.planner.PlanAndPlannedAnalyzedRelation;
 import io.crate.planner.PlanVisitor;
 import io.crate.planner.projection.Projection;
-import io.crate.planner.symbol.Field;
 import io.crate.planner.symbol.Symbol;
 import org.elasticsearch.common.Nullable;
 
@@ -86,20 +85,17 @@ public class QueryThenFetch extends PlanAndPlannedAnalyzedRelation {
         private final List<Symbol> outputs;
         private final List<Symbol> collectSymbols;
         private final List<ReferenceInfo> partitionedByColumns;
-        private final List<Field> fields;
         @Nullable
         private final OrderBy orderBy;
 
         public Context(List<Symbol> outputs,
                        List<Symbol> collectSymbols,
                        @Nullable OrderBy orderBy,
-                       List<ReferenceInfo> partitionedByColumns,
-                       List<Field> fields) {
+                       List<ReferenceInfo> partitionedByColumns) {
             this.outputs = outputs;
             this.partitionedByColumns = partitionedByColumns;
             this.collectSymbols = collectSymbols;
             this.orderBy = orderBy;
-            this.fields = fields;
         }
 
         public List<Symbol> outputs() {
@@ -116,10 +112,6 @@ public class QueryThenFetch extends PlanAndPlannedAnalyzedRelation {
 
         public OrderBy orderBy() {
             return orderBy;
-        }
-
-        public List<Field> fields() {
-            return fields;
         }
 
     }
