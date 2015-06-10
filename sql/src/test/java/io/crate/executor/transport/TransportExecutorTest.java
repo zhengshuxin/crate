@@ -167,7 +167,7 @@ public class TransportExecutorTest extends BaseTransportExecutorTest {
                 collectNode,
                 ctx);
 
-        Plan plan = new QueryThenFetch(collectNode, localMergeNode, new QueryThenFetch.Context(null, null, null, null, null));
+        Plan plan = new QueryThenFetch(collectNode, localMergeNode, new QueryThenFetch.Context(null, null, null, null));
 
         Job job = executor.newJob(plan);
         assertThat(job.tasks().size(), is(1));
