@@ -192,8 +192,7 @@ public class QueryThenFetchConsumer implements Consumer {
                     outputSymbols,
                     collectSymbols,
                     orderBy,
-                    tableInfo.partitionedByColumns(),
-                    table.fields());
+                    tableInfo.partitionedByColumns());
             if (context.consumerContext().rootRelation() != table) {
                 QueryThenFetch qtf = new QueryThenFetch(collectNode, null, qtfContext);
                 return qtf;

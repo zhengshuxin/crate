@@ -97,12 +97,10 @@ public class CrossJoinConsumer implements Consumer {
 
             // check that every inner relation is planned
             List<Symbol> allCollectorOutputs = new ArrayList<>();
-            List<Field> allFields = new ArrayList<>();
             for (AnalyzedRelation relation : statement.sources().values()) {
                 if (relation instanceof PlannedAnalyzedRelation) {
                     if (relation instanceof QueryThenFetch) {
                         allCollectorOutputs.addAll(((QueryThenFetch) relation).collectNode().toCollect());
-                        allFields.addAll(((QueryThenFetch) relation).context().fields());
                     } else if (relation instanceof NoopPlannedAnalyzedRelation) {
                         return (NoopPlannedAnalyzedRelation)relation;
                     }
@@ -139,6 +137,7 @@ public class CrossJoinConsumer implements Consumer {
                             rightMergeNode,
                             context.plannerContext()
                     );
+                    nestedLoopNode.executionNodes(new HashSet<String>(Collections.singletonList(context.plannerContext().clusterService().localNode().id())));
                     NestedLoop nl = new NestedLoop(left, right, nestedLoopNode, true);
                     nl.leftMergeNode(leftMergeNode);
                     nl.rightMergeNode(rightMergeNode);
@@ -166,6 +165,8 @@ public class CrossJoinConsumer implements Consumer {
                     rightMergeNode,
                     context.plannerContext()
             );
+            nestedLoopNode.executionNodes(new HashSet<String>(Collections.singletonList(context.plannerContext().clusterService().localNode().id())));
+
             // TODO: find a generic solution
             if (left instanceof NestedLoop) {
                 ((NestedLoop) left).nestedLoopNode().downstreamExecutionNodeId(nestedLoopNode.leftExecutionNodeId());
@@ -193,6 +194,8 @@ public class CrossJoinConsumer implements Consumer {
                         plan.resultNode(),
                         context.plannerContext());
             }
+            localMergeNode.executionNodes(new HashSet<String>(Collections.singletonList(context.plannerContext().clusterService().localNode().id())));
+
             nestedLoopNode.downstreamExecutionNodeId(localMergeNode.executionNodeId());
             plan.localMergeNode(localMergeNode);
             return plan;
@@ -220,6 +223,7 @@ public class CrossJoinConsumer implements Consumer {
             } else {
                 mergeNode = PlanNodeBuilder.localMerge(projections, previous.resultNode(), context);
             }
+            mergeNode.executionNodes(new HashSet<String>(Collections.singletonList(context.clusterService().localNode().id())));
             if(previous.resultNode() instanceof CollectNode) {
                 ((CollectNode) previous.resultNode()).downstreamExecutionNodeId(mergeNode.executionNodeId());
             }
