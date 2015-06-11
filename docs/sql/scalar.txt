@@ -302,6 +302,52 @@ timestamp will have second precision, no fractional seconds (milliseconds) are g
    operating system.
 
 
+date_format(['format_string', ['timezone',]] timestamp) returns string
+----------------------------------------------------------------------
+
+The ``date_format`` function formats a timestamp as string according to the
+(optional) format string.
+
+synopsis
+........
+
+::
+
+    DATE_FORMAT( [ format_string, [ timezone, ]] timestamp )
+
+The only mandatory argument is the ``timestamp`` value to format.
+It can be any expression that is safely convertible to timestamp.
+The syntax for the format string is the same that for the Joda Time `org.joda.time.format.DateTimeFormat`_.
+
+If no ``format_string`` is given the default format will be used::
+
+    yyyy'-'MM'-'dd'T'HH':'mm':'ss.SSSZ
+
+The ``timezone`` will be ``UTC`` if not provided::
+
+    cr> select date_format('EEEE ''the'' d. ''of'' MMMM yyyy KK:mm a ZZZZ', 0) as epoque from sys.cluster;
+    +----------------------------------------------+
+    | epoque                                       |
+    +----------------------------------------------+
+    | Thursday the 1. of January 1970 00:00 AM UTC |
+    +----------------------------------------------+
+    SELECT 1 row in set (... sec)
+
+    cr> select date_format('1970-01-01') as epoque from sys.cluster;
+    +--------------------------+
+    | epoque                   |
+    +--------------------------+
+    | 1970-01-01T00:00:00.000Z |
+    +--------------------------+
+    SELECT 1 row in set (... sec)
+
+    cr> select date_format('yyyy/MM/dd HH:mm Z', 'EST',  0) as est_epoque from sys.cluster;
+    +------------------------+
+    | est_epoque             |
+    +------------------------+
+    | 1969/12/31 19:00 -0500 |
+    +------------------------+
+    SELECT 1 row in set (... sec)
 
 Geo Functions
 =============
@@ -735,4 +781,5 @@ Examples
     +---------------------+--------------+
     SELECT 5 rows in set (... sec)
 
-.. _Java Regular Expressions: http://docs.oracle.com/javase/7/docs/api/java/util/regex/Pattern.html
+.. _Java Regular Expressions: http://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html
+.. _`org.joda.time.format.DateTimeFormat`: http://www.joda.org/joda-time/apidocs/org/joda/time/format/DateTimeFormat.html
