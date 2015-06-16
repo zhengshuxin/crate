@@ -21,6 +21,7 @@
 
 package io.crate.planner.consumer;
 
+import io.crate.analyze.AnalysisMetaData;
 import io.crate.analyze.relations.AnalyzedRelation;
 import io.crate.analyze.relations.PlannedAnalyzedRelation;
 import io.crate.exceptions.ValidationException;
@@ -39,7 +40,7 @@ public class ConsumingPlanner {
     private final List<Consumer> consumers = new ArrayList<>();
 
     @Inject
-    public ConsumingPlanner() {
+    public ConsumingPlanner(AnalysisMetaData analysisMetaData) {
         consumers.add(new NonDistributedGroupByConsumer());
         consumers.add(new ReduceOnCollectorGroupByConsumer());
         consumers.add(new DistributedGroupByConsumer());
@@ -49,6 +50,7 @@ public class ConsumingPlanner {
         consumers.add(new QueryThenFetchConsumer());
         consumers.add(new InsertFromSubQueryConsumer(this));
         consumers.add(new QueryAndFetchConsumer());
+        consumers.add(new CrossJoinConsumer(analysisMetaData, this));
     }
 
     @Nullable
