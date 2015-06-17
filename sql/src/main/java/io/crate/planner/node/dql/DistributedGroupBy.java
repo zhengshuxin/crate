@@ -67,7 +67,7 @@ public class DistributedGroupBy extends PlanAndPlannedAnalyzedRelation {
     }
 
     @Override
-    public DQLPlanNode resultNode() {
+    public ProjectionPlanNode resultNode() {
         return localMergeNode != null ? localMergeNode : reducerMergeNode;
     }
 }

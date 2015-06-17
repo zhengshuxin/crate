@@ -46,7 +46,7 @@ import java.util.List;
 import java.util.Set;
 
 
-public class ESGetNode implements DQLPlanNode, PlannedAnalyzedRelation {
+public class ESGetNode implements ProjectionPlanNode, PlannedAnalyzedRelation {
 
     private final TableInfo tableInfo;
     private final QuerySpec querySpec;
@@ -172,7 +172,7 @@ public class ESGetNode implements DQLPlanNode, PlannedAnalyzedRelation {
     }
 
     @Override
-    public DQLPlanNode resultNode() {
+    public ProjectionPlanNode resultNode() {
         return this;
     }
 

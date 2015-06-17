@@ -38,7 +38,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-public abstract class AbstractDQLPlanNode implements DQLPlanNode, Streamable, ExecutionNode {
+public abstract class AbstractDQLPlanNode implements ProjectionPlanNode, Streamable, ExecutionNode {
 
     private UUID jobId;
     private int executionNodeId;

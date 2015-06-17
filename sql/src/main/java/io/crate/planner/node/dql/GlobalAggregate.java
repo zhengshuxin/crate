@@ -59,7 +59,7 @@ public class GlobalAggregate extends PlanAndPlannedAnalyzedRelation {
     }
 
     @Override
-    public DQLPlanNode resultNode() {
+    public ProjectionPlanNode resultNode() {
         return mergeNode == null ? collectNode : mergeNode;
     }
 }

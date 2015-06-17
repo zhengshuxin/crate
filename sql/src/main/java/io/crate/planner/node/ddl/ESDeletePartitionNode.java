@@ -25,7 +25,7 @@ import io.crate.planner.node.PlanNodeVisitor;
 
 import javax.annotation.Nonnull;
 
-public class ESDeletePartitionNode extends DDLPlanNode {
+public class ESDeletePartitionNode extends RowCountPlanNode {
 
     private final String[] indices;
 

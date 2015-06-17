@@ -26,7 +26,7 @@ import com.google.common.base.Optional;
 import io.crate.planner.Plan;
 import io.crate.planner.PlanAndPlannedAnalyzedRelation;
 import io.crate.planner.PlanVisitor;
-import io.crate.planner.node.dql.DQLPlanNode;
+import io.crate.planner.node.dql.ProjectionPlanNode;
 import io.crate.planner.node.dql.MergeNode;
 import io.crate.planner.projection.Projection;
 
@@ -68,7 +68,7 @@ public class InsertFromSubQuery extends PlanAndPlannedAnalyzedRelation {
     }
 
     @Override
-    public DQLPlanNode resultNode() {
+    public ProjectionPlanNode resultNode() {
         throw new UnsupportedOperationException("resultNode is not supported");
     }
 }

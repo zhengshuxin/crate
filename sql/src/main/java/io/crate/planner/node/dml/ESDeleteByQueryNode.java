@@ -24,6 +24,7 @@ package io.crate.planner.node.dml;
 import com.google.common.base.Optional;
 import io.crate.analyze.WhereClause;
 import io.crate.planner.node.PlanNodeVisitor;
+import io.crate.planner.node.ddl.RowCountPlanNode;
 import io.crate.planner.symbol.Symbol;
 import io.crate.planner.symbol.ValueSymbolVisitor;
 
@@ -32,7 +33,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
-public class ESDeleteByQueryNode extends DMLPlanNode {
+public class ESDeleteByQueryNode extends RowCountPlanNode {
 
     private static final char COMMA = ',';
 

@@ -33,7 +33,7 @@ import io.crate.metadata.Routing;
 import io.crate.metadata.table.TableInfo;
 import io.crate.planner.consumer.OrderByPositionVisitor;
 import io.crate.planner.node.dql.CollectNode;
-import io.crate.planner.node.dql.DQLPlanNode;
+import io.crate.planner.node.dql.ProjectionPlanNode;
 import io.crate.planner.node.dql.MergeNode;
 import io.crate.planner.projection.Projection;
 import io.crate.planner.symbol.InputColumn;
@@ -86,7 +86,7 @@ public class PlanNodeBuilder {
     }
 
     public static MergeNode localMerge(List<Projection> projections,
-                                       DQLPlanNode previousNode,
+                                       ProjectionPlanNode previousNode,
                                        Planner.Context plannerContext) {
         return new MergeNode(
                 plannerContext.nextExecutionNodeId(),
@@ -113,7 +113,7 @@ public class PlanNodeBuilder {
                                              OrderBy orderBy,
                                              List<Symbol> sourceSymbols,
                                              @Nullable List<Symbol> orderBySymbols,
-                                             DQLPlanNode previousNode,
+                                             ProjectionPlanNode previousNode,
                                              Planner.Context plannerContext) {
         int[] orderByIndices = OrderByPositionVisitor.orderByPositions(
                 MoreObjects.firstNonNull(orderBySymbols, orderBy.orderBySymbols()),

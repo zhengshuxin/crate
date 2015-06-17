@@ -22,6 +22,7 @@
 package io.crate.planner.node.dml;
 
 import io.crate.planner.node.PlanNodeVisitor;
+import io.crate.planner.node.ddl.RowCountPlanNode;
 import io.crate.planner.symbol.Reference;
 import io.crate.planner.symbol.Symbol;
 import org.elasticsearch.common.Nullable;
@@ -30,7 +31,7 @@ import org.elasticsearch.common.lucene.uid.Versions;
 import java.util.ArrayList;
 import java.util.List;
 
-public class SymbolBasedUpsertByIdNode extends DMLPlanNode {
+public class SymbolBasedUpsertByIdNode extends RowCountPlanNode {
 
     /**
      * A single update item.

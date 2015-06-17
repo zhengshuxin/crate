@@ -431,9 +431,9 @@ public class PlannerTest extends CrateUnitTest {
         assertThat(topN.offset(), is(0));
 
         // local merge
-        DQLPlanNode dqlPlanNode = distributedGroupBy.localMergeNode();
-        assertThat(dqlPlanNode.projections().get(0), instanceOf(TopNProjection.class));
-        topN = (TopNProjection) dqlPlanNode.projections().get(0);
+        ProjectionPlanNode projectionPlanNode = distributedGroupBy.localMergeNode();
+        assertThat(projectionPlanNode.projections().get(0), instanceOf(TopNProjection.class));
+        topN = (TopNProjection) projectionPlanNode.projections().get(0);
         assertThat(topN.limit(), is(1));
         assertThat(topN.offset(), is(1));
         assertThat(topN.outputs().get(0), instanceOf(InputColumn.class));
@@ -514,7 +514,7 @@ public class PlannerTest extends CrateUnitTest {
         assertTrue(collectNode.whereClause().hasQuery());
         assertFalse(collectNode.isPartitioned());
 
-        DQLPlanNode resultNode = ((QueryThenFetch) plan).resultNode();
+        ProjectionPlanNode resultNode = ((QueryThenFetch) plan).resultNode();
         assertThat(resultNode.outputTypes().size(), is(1));
         assertEquals(DataTypes.STRING, resultNode.outputTypes().get(0));
 
@@ -539,7 +539,7 @@ public class PlannerTest extends CrateUnitTest {
         assertTrue(collectNode.whereClause().hasQuery());
         assertFalse(collectNode.isPartitioned());
 
-        DQLPlanNode resultNode = ((QueryThenFetch) plan).resultNode();
+        ProjectionPlanNode resultNode = ((QueryThenFetch) plan).resultNode();
         assertThat(resultNode.outputTypes().size(), is(1));
         assertEquals(DataTypes.STRING, resultNode.outputTypes().get(0));
 
@@ -638,7 +638,7 @@ public class PlannerTest extends CrateUnitTest {
         assertTrue(collectNode.whereClause().hasQuery());
         assertTrue(collectNode.isPartitioned());
 
-        DQLPlanNode resultNode = ((QueryThenFetch) plan).resultNode();
+        ProjectionPlanNode resultNode = ((QueryThenFetch) plan).resultNode();
         assertThat(resultNode.outputTypes().size(), is(3));
     }
 
@@ -651,7 +651,7 @@ public class PlannerTest extends CrateUnitTest {
         assertTrue(collectNode.whereClause().hasQuery());
         assertFalse(collectNode.isPartitioned());
 
-        DQLPlanNode resultNode = ((QueryThenFetch) plan).resultNode();
+        ProjectionPlanNode resultNode = ((QueryThenFetch) plan).resultNode();
         assertThat(resultNode.outputTypes().size(), is(2));
         assertEquals(DataTypes.STRING, resultNode.outputTypes().get(0));
         assertEquals(DataTypes.STRING, resultNode.outputTypes().get(1));
@@ -1345,7 +1345,7 @@ public class PlannerTest extends CrateUnitTest {
         assertTrue(collectNode.whereClause().hasQuery());
         assertFalse(collectNode.isPartitioned());
 
-        DQLPlanNode resultNode = ((QueryThenFetch) plan).resultNode();
+        ProjectionPlanNode resultNode = ((QueryThenFetch) plan).resultNode();
         assertThat(resultNode.outputTypes().size(), is(1));
         assertEquals(DataTypes.STRING, resultNode.outputTypes().get(0));
 

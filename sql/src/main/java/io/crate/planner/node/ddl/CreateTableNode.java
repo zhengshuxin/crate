@@ -29,7 +29,7 @@ import org.elasticsearch.common.settings.Settings;
 import javax.annotation.Nullable;
 import java.util.Map;
 
-public class CreateTableNode extends DDLPlanNode {
+public class CreateTableNode extends RowCountPlanNode {
 
     private final TableIdent tableIdent;
     private boolean ifNotExists;

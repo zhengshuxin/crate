@@ -7,11 +7,9 @@ import io.crate.types.DataType;
 import java.util.List;
 import java.util.Set;
 
-public interface DQLPlanNode extends PlanNode {
+public interface ProjectionPlanNode extends PlanNode {
 
     boolean hasProjections();
     List<Projection> projections();
     void addProjection(Projection projection);
-
-    Set<String> executionNodes();
 }

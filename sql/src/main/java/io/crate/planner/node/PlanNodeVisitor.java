@@ -60,7 +60,7 @@ public class PlanNodeVisitor<C, R> {
         return visitPlanNode(node, context);
     }
 
-    private R visitDDLPlanNode(DDLPlanNode node, C context) {
+    private R visitDDLPlanNode(RowCountPlanNode node, C context) {
         return visitPlanNode(node, context);
     }
 

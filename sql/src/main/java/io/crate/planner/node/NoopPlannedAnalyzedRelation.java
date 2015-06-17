@@ -28,7 +28,7 @@ import io.crate.exceptions.ColumnUnknownException;
 import io.crate.metadata.Path;
 import io.crate.planner.NoopPlan;
 import io.crate.planner.Plan;
-import io.crate.planner.node.dql.DQLPlanNode;
+import io.crate.planner.node.dql.ProjectionPlanNode;
 import io.crate.planner.projection.Projection;
 import io.crate.planner.symbol.Field;
 
@@ -80,7 +80,7 @@ public class NoopPlannedAnalyzedRelation implements PlannedAnalyzedRelation {
     }
 
     @Override
-    public DQLPlanNode resultNode() {
+    public ProjectionPlanNode resultNode() {
         throw new UnsupportedOperationException("resultNode is not supported");
     }
 

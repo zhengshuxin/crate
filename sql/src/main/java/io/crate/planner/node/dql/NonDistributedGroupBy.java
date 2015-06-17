@@ -59,7 +59,7 @@ public class NonDistributedGroupBy extends PlanAndPlannedAnalyzedRelation {
     }
 
     @Override
-    public DQLPlanNode resultNode() {
+    public ProjectionPlanNode resultNode() {
         return localMergeNode == null ? collectNode : localMergeNode;
     }
 }

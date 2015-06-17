@@ -27,7 +27,7 @@ import org.elasticsearch.common.settings.Settings;
 import javax.annotation.Nullable;
 import java.util.Map;
 
-public class ESCreateTemplateNode extends DDLPlanNode {
+public class ESCreateTemplateNode extends RowCountPlanNode {
 
     private final String templateName;
     private final String indexMatch;

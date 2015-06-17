@@ -2,7 +2,6 @@ package io.crate.planner.node.dql;
 
 
 import io.crate.planner.PlanAndPlannedAnalyzedRelation;
-import io.crate.planner.PlanNodeBuilder;
 import io.crate.planner.PlanVisitor;
 import io.crate.planner.projection.Projection;
 
@@ -42,7 +41,7 @@ public class QueryAndFetch extends PlanAndPlannedAnalyzedRelation {
     }
 
     @Override
-    public DQLPlanNode resultNode() {
+    public ProjectionPlanNode resultNode() {
         return localMergeNode == null ? collectNode : localMergeNode;
     }
 }

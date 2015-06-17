@@ -28,7 +28,7 @@ import org.elasticsearch.common.settings.Settings;
 import javax.annotation.Nullable;
 import java.util.Set;
 
-public class ESClusterUpdateSettingsNode extends DDLPlanNode {
+public class ESClusterUpdateSettingsNode extends RowCountPlanNode {
 
     private final Settings persistentSettings;
     private final Settings transientSettings;

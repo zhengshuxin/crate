@@ -59,7 +59,7 @@ public class CountPlan extends PlanAndPlannedAnalyzedRelation{
     }
 
     @Override
-    public DQLPlanNode resultNode() {
+    public ProjectionPlanNode resultNode() {
         return mergeNode;
     }
 }

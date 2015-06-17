@@ -22,7 +22,7 @@
 package io.crate.analyze.relations;
 
 import io.crate.planner.Plan;
-import io.crate.planner.node.dql.DQLPlanNode;
+import io.crate.planner.node.dql.ProjectionPlanNode;
 import io.crate.planner.projection.Projection;
 
 public interface PlannedAnalyzedRelation extends AnalyzedRelation {
@@ -36,6 +36,6 @@ public interface PlannedAnalyzedRelation extends AnalyzedRelation {
 
     public boolean resultIsDistributed();
 
-    public DQLPlanNode resultNode();
+    public ProjectionPlanNode resultNode();
 
 }

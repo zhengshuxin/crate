@@ -24,10 +24,11 @@ package io.crate.planner.node.dml;
 import io.crate.analyze.where.DocKeys;
 import io.crate.metadata.table.TableInfo;
 import io.crate.planner.node.PlanNodeVisitor;
+import io.crate.planner.node.ddl.RowCountPlanNode;
 
 import java.util.List;
 
-public class ESDeleteNode extends DMLPlanNode {
+public class ESDeleteNode extends RowCountPlanNode {
 
     private final int executionNodeId;
     private final TableInfo tableInfo;

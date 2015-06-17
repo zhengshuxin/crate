@@ -267,7 +267,7 @@ public class PlanPrinter extends PlanVisitor<PlanPrinter.PrintContext, Void> {
     }
 
 
-    private void processProjections(DQLPlanNode node, PrintContext context) {
+    private void processProjections(ProjectionPlanNode node, PrintContext context) {
         if (node.hasProjections()) {
             context.print(node.toString());
             context.indent();
